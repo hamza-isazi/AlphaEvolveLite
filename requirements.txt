@@ -1,0 +1,7 @@
+# --- Core runtime dependencies ---
+openai>=1.14.0          # LLM API client
+psycopg2-binary>=2.9    # PostgreSQL driver
+PyYAML>=6.0             # Config file parsing
+
+# --- Development / testing (optional but recommended) ---
+pytest>=8.0             # test suite
