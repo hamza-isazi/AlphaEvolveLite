@@ -1,4 +1,9 @@
+# VS Code
 .vscode
+
+# Db stuff
+*.db
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

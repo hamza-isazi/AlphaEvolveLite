@@ -1,58 +1,96 @@
-import psycopg2
-import math
+import sqlite3
 import random
-from psycopg2.extras import RealDictCursor
 from typing import List, Tuple, Optional
 from .config import Config
 
 class EvolutionaryDatabase:
     def __init__(self, cfg: Config) -> None:
-        self.conn = psycopg2.connect(cfg.db_uri, cursor_factory=RealDictCursor)
+        # SQLite URI: sqlite:///path/to.db → strip the prefix
+        path = cfg.db_uri.replace("sqlite:///", "", 1)
+        self.conn = sqlite3.connect(path, isolation_level=None)
+        self.conn.row_factory = sqlite3.Row  # enable dict-like access to rows
+        self.conn.execute("PRAGMA foreign_keys = ON")
         self._ensure_schema()
         self.cfg = cfg
+        self.experiment_id = self._ensure_experiment(
+            cfg.exp.label, cfg.exp.notes
+        )
 
     def _ensure_schema(self) -> None:
-        with self.conn, self.conn.cursor() as cur:
-            cur.execute(
-                """
-                CREATE TABLE IF NOT EXISTS programs (
-                    id SERIAL PRIMARY KEY,
-                    code TEXT NOT NULL,
-                    score DOUBLE PRECISION NOT NULL,
-                    gen  INT NOT NULL,
-                    parent_id INT
-                );
-                """
-            )
+        cur = self.conn.cursor()
+        cur.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS experiments (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                label TEXT UNIQUE NOT NULL,
+                notes TEXT,
+                started_at TEXT DEFAULT (datetime('now'))
+            );
+
+            CREATE TABLE IF NOT EXISTS programs (
+                id   INTEGER PRIMARY KEY AUTOINCREMENT,
+                code TEXT NOT NULL,
+                score REAL NOT NULL,
+                gen  INTEGER NOT NULL,
+                parent_id INTEGER,
+                experiment_id INTEGER NOT NULL,
+                FOREIGN KEY(experiment_id) REFERENCES experiments(id)
+                     ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_program_exp
+                ON programs (experiment_id);
+            """
+        )
+
+    def _ensure_experiment(self, label: str, notes: str) -> int:
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO experiments (label, notes)
+            VALUES (?, ?)
+            ON CONFLICT(label) DO UPDATE SET notes = excluded.notes
+            """,
+            (label, notes),
+        )
+        return cur.execute("SELECT id FROM experiments WHERE label = ?", (label,)).fetchone()[0]
 
     def add(self, code: str, score: float, gen: int, parent_id: Optional[int]) -> int:
-        with self.conn, self.conn.cursor() as cur:
-            cur.execute(
-                "INSERT INTO programs (code, score, gen, parent_id) VALUES (%s,%s,%s,%s) RETURNING id",
-                (code, score, gen, parent_id),
-            )
-            return cur.fetchone()["id"]
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            INSERT INTO programs (code, score, gen, parent_id, experiment_id)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (code, score, gen, parent_id, self.experiment_id),
+        )
+        return cur.lastrowid
 
-    def _top_k(self, k: int) -> List[dict]:
-        with self.conn.cursor() as cur:
-            cur.execute("SELECT * FROM programs ORDER BY score DESC LIMIT %s", (k,))
-            return cur.fetchall()
+    def _top_k(self, k: int):
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM programs
+            WHERE experiment_id = ?
+            ORDER BY score DESC
+            LIMIT ?
+            """,
+            (self.experiment_id, k),
+        )
+        return [dict(r) for r in cur.fetchall()]
 
-    def _random_n(self, n: int) -> List[dict]:
-        with self.conn.cursor() as cur:
-            cur.execute("SELECT * FROM programs ORDER BY random() LIMIT %s", (n,))
-            return cur.fetchall()
-
-    def _boltzmann_select(self):
-        rows = self.database.top_k(self.cfg.evolution.population_size)
-        if not rows:
-            raise RuntimeError("Archive empty")
-        probs = [
-            math.exp(r["score"] / self.cfg.evolution.temperature) for r in rows
-        ]
-        total = sum(probs)
-        probs = [p / total for p in probs]
-        return random.choices(rows, probs, k=1)[0]
+    def _random_n(self, n: int):
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM programs
+            WHERE experiment_id = ?
+            ORDER BY RANDOM()
+            LIMIT ?
+            """,
+            (self.experiment_id, n),
+        )
+        return [dict(r) for r in cur.fetchall()]
     
     def sample(self) -> Tuple[dict, List[dict]]:
         """

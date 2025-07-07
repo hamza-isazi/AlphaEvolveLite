@@ -2,6 +2,11 @@ from dataclasses import dataclass
 from pathlib import Path
 import yaml
 
+@dataclass
+class ExpCfg:
+    label: str
+    notes: str
+
 
 @dataclass
 class LLMCfg:
@@ -20,6 +25,7 @@ class EvolCfg:
 @dataclass
 class Config:
     db_uri: str
+    exp: ExpCfg
     llm: LLMCfg
     evolution: EvolCfg
     problem_entry: str
@@ -31,6 +37,7 @@ class Config:
             data = yaml.safe_load(f)
         return cls(
             db_uri=data["db_uri"],
+            exp=ExpCfg(**data["experiment"]),
             llm=LLMCfg(**data["llm"]),
             evolution=EvolCfg(**data["evolution"]),
             problem_entry=data["problem"]["entry_script"],

@@ -1,4 +1,4 @@
-db_uri: postgresql://ae_user:ae_pass@localhost/alphaevolve
+db_uri: sqlite:///alphaevolve.db
 
 experiment:
   label: fib-baseline-v1        # human-readable tag

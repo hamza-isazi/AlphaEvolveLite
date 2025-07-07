@@ -1,5 +1,6 @@
 
 from pathlib import Path
+import tempfile
 
 from .log import init_logger
 from .patcher import PatchApplier
@@ -39,8 +40,10 @@ class EvolutionController:
                 continue
 
             # Write to temp file for evaluator
-            tmp_path = Path(".alpha_tmp.py")
-            tmp_path.write_text(child_program)
-            score = self.problem.evaluate(str(tmp_path))
+            with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=True) as tmp:
+                tmp.write(child_program)
+                tmp.flush()
+                score = self.problem.evaluate(tmp.name)
+
             pid = self.database.add(child_program, score, gen, parent_row["id"])
             self.logger.info("Gen %d: new score %.3f (id %d)", gen, score, pid)
