@@ -25,12 +25,17 @@ TEMPLATE = """\
 
     Follow the SEARCH/REPLACE block rules described below.
 
-    SEARCH/REPLACE block rules:
+    ### SEARCH/REPLACE block rules
+    - Only change lines *between* the markers  
+    `# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END`.  
+    - Emit *each* independent modification as its own complete block:
         <<<<<<< SEARCH
-        # original code to match
+        # original lines (one or more consecutive lines)
         =======
-        # new code to replace it with
+        # replacement lines (same number of lines or valid replacement)
         >>>>>>> REPLACE
+    - Do **not** nest multiple SEARCH/REPLACE blocks together—each change must start with `<<<<<<< SEARCH` and end with `>>>>>>> REPLACE`.  
+    - Never alter code outside an EVOLVE block; any such hunk is rejected.
 
     Make sure that the changes you propose are consistent with each
     other. For example, if you refer to a new config variable

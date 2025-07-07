@@ -14,7 +14,7 @@ class EvolutionController:
     def __init__(self, cfg: Config):
         self.cfg = cfg
         self.logger = init_logger()
-        self.database = EvolutionaryDatabase(cfg.db_uri, cfg.evolution)
+        self.database = EvolutionaryDatabase(cfg)
         self.logger.info("Connected to database at %s", cfg.db_uri)
         self.problem = Problem(cfg.problem_entry, cfg.problem_eval)
         self.prompt_sampler = PromptSampler(self.database)
@@ -36,7 +36,6 @@ class EvolutionController:
 
             if not child_program or not self.patcher.is_valid(child_program):
                 self.logger.info("Gen %d: invalid patch, skipping", gen)
-                self.logger.info("Invalid code:\n %s", child_program, stacklevel=2)
                 continue
 
             # Write to temp file for evaluator

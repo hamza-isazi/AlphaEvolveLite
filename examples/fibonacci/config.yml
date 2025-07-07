@@ -1,5 +1,9 @@
 db_uri: postgresql://ae_user:ae_pass@localhost/alphaevolve
 
+experiment:
+  label: fib-baseline-v1        # human-readable tag
+  notes: "Fibonacci sanity run"
+
 llm:
   provider: openai
   model: gpt-4o-mini          # or any model your key can access
@@ -7,8 +11,8 @@ llm:
 evolution:
   population_size: 20
   temperature: 1.5
-  max_generations: 30         # keeps PoC run short
-  inspiration_count: 6        # number of inspirations to use in each generation
+  max_generations: 10         # keeps PoC run short
+  inspiration_count: 4        # number of inspirations to use in each generation
 
 problem:
   entry_script: examples/fibonacci/solution.py

@@ -3,13 +3,13 @@ import math
 import random
 from psycopg2.extras import RealDictCursor
 from typing import List, Tuple, Optional
-from .config import EvolCfg
+from .config import Config
 
 class EvolutionaryDatabase:
-    def __init__(self, db_uri: str, evol_cfg: EvolCfg) -> None:
-        self.conn = psycopg2.connect(db_uri, cursor_factory=RealDictCursor)
+    def __init__(self, cfg: Config) -> None:
+        self.conn = psycopg2.connect(cfg.db_uri, cursor_factory=RealDictCursor)
         self._ensure_schema()
-        self.evol_cfg = evol_cfg
+        self.cfg = cfg
 
     def _ensure_schema(self) -> None:
         with self.conn, self.conn.cursor() as cur:
@@ -44,11 +44,11 @@ class EvolutionaryDatabase:
             return cur.fetchall()
 
     def _boltzmann_select(self):
-        rows = self.database.top_k(self.evol_cfg.population_size)
+        rows = self.database.top_k(self.cfg.evolution.population_size)
         if not rows:
             raise RuntimeError("Archive empty")
         probs = [
-            math.exp(r["score"] / self.evol_cfg.temperature) for r in rows
+            math.exp(r["score"] / self.cfg.evolution.temperature) for r in rows
         ]
         total = sum(probs)
         probs = [p / total for p in probs]
@@ -75,7 +75,7 @@ class EvolutionaryDatabase:
             parent = self._random_n(1)[0]
 
         # 2. ----- inspiration selection -------------------------------------
-        k = self.evol_cfg.inspiration_count
+        k = self.cfg.evolution.inspiration_count
         half = k // 2
 
         # a) strongest half (top-k but skip parent)
