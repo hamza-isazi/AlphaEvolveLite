@@ -47,3 +47,20 @@ class EvolutionController:
 
             pid = self.database.add(child_program, score, gen, parent_row["id"])
             self.logger.info("Gen %d: new score %.3f (id %d)", gen, score, pid)
+        self.logger.info("Evolution complete. Final generation: %d", gen)
+        self.save_top_k_candidates()
+
+    def save_top_k_candidates(self):
+        self.logger.info("Saving top %d candidates", self.cfg.exp.save_top_k)
+        rows = self.database.top_k(self.cfg.exp.save_top_k)
+        results_dir = Path("results")
+        results_dir.mkdir(exist_ok=True)
+
+        for row in rows:
+            fname = (
+                f"{row['experiment_id']}_gen{row['gen']}_"
+                f"score{row['score']:.3f}_id{row['id']}.py"
+            )
+            out_path = results_dir / fname
+            out_path.write_text(row["code"])
+            self.logger.info("Saved top candidate to %s", out_path)

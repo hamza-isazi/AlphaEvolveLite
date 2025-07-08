@@ -6,6 +6,7 @@ import yaml
 class ExpCfg:
     label: str
     notes: str
+    save_top_k: int
 
 
 @dataclass

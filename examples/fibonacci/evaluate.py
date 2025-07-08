@@ -13,20 +13,24 @@ def _load_module(path: str):
     spec.loader.exec_module(mod)
     return mod
 
-def evaluate(path: str) -> float:
+def evaluate(path: str, num_iters=10) -> float:
     mod = _load_module(path)
     try:
-        start = time.perf_counter()
-        results = [mod.fib(i) for i in range(len(EXPECTED))]
-        elapsed = time.perf_counter() - start
+        elapsed_times = []
+        for i in range(num_iters):
+            start = time.perf_counter()
+            results = [mod.fib(i) for i in range(len(EXPECTED))]
+            elapsed_times.append(time.perf_counter() - start)
 
         if results != EXPECTED:
             return 0.0
-        
-        # define a maximum time for scoring, e.g. 1 millisecond
-        max_time = 0.01
-        penalty = min(1.0, elapsed / max_time)
-        score = 1.0 - penalty
+        else:
+            # define a maximum time for calculating time penalty
+            max_time = 0.005
+            # penalty based on how close you are to max time
+            avg_elapsed = sum(elapsed_times)/num_iters
+            penalty = min(1, avg_elapsed / max_time)
+            score = 1 - 0.5 * penalty
 
         return max(score, 0.0)
 

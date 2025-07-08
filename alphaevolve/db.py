@@ -66,7 +66,7 @@ class EvolutionaryDatabase:
         )
         return cur.lastrowid
 
-    def _top_k(self, k: int):
+    def top_k(self, k: int):
         cur = self.conn.cursor()
         cur.execute(
             """
@@ -79,7 +79,7 @@ class EvolutionaryDatabase:
         )
         return [dict(r) for r in cur.fetchall()]
 
-    def _random_n(self, n: int):
+    def random_n(self, n: int):
         cur = self.conn.cursor()
         cur.execute(
             """
@@ -110,17 +110,17 @@ class EvolutionaryDatabase:
         except RuntimeError:           # archive empty ⇒ caller should seed first row
             raise
         except Exception:              # safety net – fall back to pure random choice
-            parent = self._random_n(1)[0]
+            parent = self.random_n(1)[0]
 
         # 2. ----- inspiration selection -------------------------------------
         k = self.cfg.evolution.inspiration_count
         half = k // 2
 
         # a) strongest half (top-k but skip parent)
-        strong = [row for row in self._top_k(k + 1) if row["id"] != parent["id"]][:half]
+        strong = [row for row in self.top_k(k + 1) if row["id"] != parent["id"]][:half]
 
         # b) diverse half (uniform random, also skip parent & already-chosen rows)
-        diverse_pool = [row for row in self._random_n(k * 2)
+        diverse_pool = [row for row in self.random_n(k * 2)
                         if row["id"] != parent["id"]
                         and row["id"] not in {r["id"] for r in strong}]
         diverse = random.sample(diverse_pool, min(k - len(strong), len(diverse_pool)))

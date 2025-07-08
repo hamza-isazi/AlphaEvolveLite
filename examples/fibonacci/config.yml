@@ -3,6 +3,7 @@ db_uri: sqlite:///alphaevolve.db
 experiment:
   label: fib-baseline-v1        # human-readable tag
   notes: "Fibonacci sanity run"
+  save_top_k: 5               # number of top programs to save one completion of the experiment
 
 llm:
   provider: openai
