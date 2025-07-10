@@ -19,7 +19,7 @@ class EvolutionController:
         self.logger.info("Connected to database at %s", cfg.db_uri)
         self.problem = Problem(cfg.problem_entry, cfg.problem_eval)
         self.prompt_sampler = PromptSampler(self.database)
-        self.llm = OpenAIEngine(cfg.llm.model)
+        self.llm = OpenAIEngine(cfg.llm)
         self.patcher = PatchApplier()
 
         # Seed archive with original solution

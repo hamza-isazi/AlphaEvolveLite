@@ -59,7 +59,7 @@ python scripts/init_db.py postgresql://ae_user:ae_pass@localhost/alphaevolve
 3. **Run PoC**
 
 ```bash
-python -m scripts.run configs/fibonacci.yml
+python -m scripts.run examples/fibonacci/config.yml
 ```
 
 ## Core Components

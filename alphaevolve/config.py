@@ -13,6 +13,8 @@ class ExpCfg:
 class LLMCfg:
     provider: str
     model: str
+    temperature: float = 0.7
+    system_prompt: str = "You are an expert software developer evolving Python code using diffs."
 
 
 @dataclass
