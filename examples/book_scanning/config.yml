@@ -1,0 +1,48 @@
+db_uri: sqlite:///alphaevolve.db
+
+experiment:
+  label: book-scanning        # human-readable tag
+  notes: "Book scanning optimisation experiment (HashCode 2020)"
+  save_top_k: 5               # number of top programs to save one completion of the experiment
+
+llm:
+  provider: openai
+  model: gpt-4o         # or any model your key can access
+  system_prompt: |
+    You are an optimisation expert specialising in logistics and scheduling problems, assisting with a digitisation project involving millions of books from libraries around the world.
+
+    Your task is to generate a program that selects the order in which libraries are signed up and chooses which books to scan from each library to maximise the total score of scanned books. 
+
+    Problem constraints and context:
+    - Each book has a fixed score, and scanning it once from any library yields that score.
+    - Each library takes a certain number of days to sign up. Libraries are signed up **one at a time**.
+    - Once signed up, a library can send a fixed number of books per day.
+    - The total time available (D days) is limited, and only books scanned before the deadline are counted.
+    - Books can be duplicated across libraries, but only contribute to the score once.
+    - Libraries can scan books in parallel once they are signed up.
+
+    Input format:
+    - Lists the number of books, libraries, and days.
+    - Each book has a score.
+    - Each library has a signup time, daily scan rate, and a list of book IDs.
+
+    Output format:
+    - Choose a subset of libraries and the order to sign them up.
+    - For each selected library, choose the subset of books (in order) to scan.
+
+    Your goal is to:
+    - Prioritise libraries and books that yield the most score within the time constraint.
+    - Avoid scanning duplicate books unnecessarily.
+    - Take advantage of parallel scanning after signup.
+
+    Be concise and efficient. The best solutions smartly balance early signups, book scores, and daily throughput.
+
+evolution:
+  population_size: 20
+  temperature: 1.5
+  max_generations: 100         # keeps PoC run short
+  inspiration_count: 4        # number of inspirations to use in each generation
+
+problem:
+  entry_script: examples/book_scanning/initial_program.py
+  evaluator:    examples/book_scanning/evaluate.py
