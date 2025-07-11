@@ -53,7 +53,7 @@ class EvolutionController:
     def save_top_k_candidates(self):
         self.logger.info("Saving top %d candidates", self.cfg.exp.save_top_k)
         rows = self.database.top_k(self.cfg.exp.save_top_k)
-        results_dir = Path("results")
+        results_dir = Path(f"results/{self.cfg.exp.label}")
         results_dir.mkdir(exist_ok=True)
 
         for row in rows:

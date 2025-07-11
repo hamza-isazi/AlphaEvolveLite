@@ -18,19 +18,18 @@ class PatchApplier:
     @staticmethod
     def apply_diff(source: str, diff_text: str) -> Optional[str]:
         regions = PatchApplier._evolve_regions(source)
-        if not regions:
-            return None  # nothing is editable
-
+        
         new = source
         for search, replace in _DIFF_RE.findall(diff_text):
             pos = new.find(search)
             if pos == -1:
                 return None  # SEARCH chunk not found verbatim
 
-            # verify that the match lies wholly inside one evolve region
-            in_block = any(start <= pos < end for start, end in regions)
-            if not in_block:
-                return None  # attempted edit outside allowed span
+            # If evolve regions are present, verify that the match lies wholly inside one evolve region
+            if regions:
+                in_block = any(start <= pos < end for start, end in regions)
+                if not in_block:
+                    return None  # attempted edit outside allowed span
 
             new = new.replace(search, replace, 1)
 

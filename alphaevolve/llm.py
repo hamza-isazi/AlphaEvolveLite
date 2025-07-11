@@ -1,6 +1,7 @@
 import os
 from typing import Protocol
 from openai import OpenAI
+
 from .config import LLMCfg
 
 class LLMEngine(Protocol):
@@ -18,12 +19,11 @@ class OpenAIEngine:
         self.client = OpenAI(api_key=api_key)
 
     def generate(self, prompt: str) -> str:
-        response = self.client.chat.completions.create(
-            model=self.model,
-            messages = [
-                {"role": "system", "content": self.system_prompt},
-                {"role": "user", "content": prompt},
-            ],
-            temperature=self.temperature,
-        )
-        return response.choices[0].message.content.strip()
+        response = self.client.chat.completions.create(model=self.model,
+        messages = [
+            {"role": "system", "content": self.system_prompt},
+            {"role": "user", "content": prompt},
+        ],
+        temperature=self.temperature)
+        content = response.choices[0].message.content
+        return content.strip() if content else ""

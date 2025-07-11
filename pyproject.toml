@@ -8,3 +8,7 @@ name        = "alphaevolve-lite"
 version     = "0.1.0"
 description = "Minimal open-source AlphaEvolve"
 authors     = [{ name = "Kelian" }]
+
+[tool.setuptools.packages.find]
+include = ["alphaevolve*"]
+exclude = ["results*", "examples*", "scripts*", "tests*"]
