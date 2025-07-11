@@ -2,6 +2,7 @@ import sqlite3
 import random
 from typing import List, Tuple, Optional
 from .config import Config
+import math
 
 class EvolutionaryDatabase:
     def __init__(self, cfg: Config) -> None:
@@ -56,6 +57,14 @@ class EvolutionaryDatabase:
         return cur.execute("SELECT id FROM experiments WHERE label = ?", (label,)).fetchone()[0]
 
     def add(self, code: str, score: float, gen: int, parent_id: Optional[int]) -> int:
+        """
+        Add a program to the database.
+
+        Returns
+        -------
+        id : int
+            The ID of the inserted program.
+        """
         cur = self.conn.cursor()
         cur.execute(
             """
@@ -64,9 +73,20 @@ class EvolutionaryDatabase:
             """,
             (code, score, gen, parent_id, self.experiment_id),
         )
-        return cur.lastrowid
+        lastrowid = cur.lastrowid
+        if lastrowid is None:
+            raise RuntimeError("Failed to insert program: lastrowid is None")
+        return lastrowid
 
-    def top_k(self, k: int):
+    def top_k(self, k: int) -> List[dict]:
+        """
+        Get the top k programs by score.
+
+        Returns
+        -------
+        programs : List[dict]
+            The top k programs by score.
+        """
         cur = self.conn.cursor()
         cur.execute(
             """
@@ -79,7 +99,15 @@ class EvolutionaryDatabase:
         )
         return [dict(r) for r in cur.fetchall()]
 
-    def random_n(self, n: int):
+    def random_n(self, n: int) -> List[dict]:
+        """
+        Get n random programs.
+
+        Returns
+        -------
+        programs : List[dict]
+            n random programs.
+        """
         cur = self.conn.cursor()
         cur.execute(
             """
@@ -129,3 +157,46 @@ class EvolutionaryDatabase:
         random.shuffle(inspirations)   # avoid positional bias in the prompt
 
         return parent, inspirations
+
+    def _boltzmann_select(self) -> dict:
+        """
+        Select a parent program using Boltzmann selection.
+        
+        The probability of selecting a program is proportional to exp(score / temperature).
+        Higher scores and lower temperatures make selection more deterministic.
+        
+        Returns
+        -------
+        program : dict
+            Selected program row.
+            
+        Raises
+        ------
+        RuntimeError
+            If no programs exist in the database.
+        """
+        # Get all programs for this experiment
+        cur = self.conn.cursor()
+        cur.execute(
+            """
+            SELECT * FROM programs
+            WHERE experiment_id = ?
+            """,
+            (self.experiment_id,),
+        )
+        programs = [dict(r) for r in cur.fetchall()]
+        
+        if not programs:
+            raise RuntimeError("No programs in database")
+        
+        # Calculate Boltzmann weights
+        temperature = self.cfg.evolution.temperature
+        weights = [math.exp(program["score"] / temperature) for program in programs]
+        total_weight = sum(weights)
+        
+        # Normalize weights to probabilities
+        probabilities = [w / total_weight for w in weights]
+        
+        # Select based on probabilities
+        selected = random.choices(programs, weights=probabilities, k=1)[0]
+        return selected
