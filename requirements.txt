@@ -3,5 +3,9 @@ openai>=1.14.0          # LLM API client
 psycopg2-binary>=2.9    # PostgreSQL driver
 PyYAML>=6.0             # Config file parsing
 
+# --- Visualization dependencies ---
+matplotlib>=3.7.0       # Plotting library
+numpy>=1.24.0           # Numerical computing
+
 # --- Development / testing (optional but recommended) ---
 pytest>=8.0             # test suite
