@@ -6,7 +6,11 @@ Best recorded competition score: 27203691
 
 import sys
 import time
+import signal
 from pathlib import Path
+
+def timeout_handler(signum, frame):
+    raise TimeoutError("Function execution timed out")
 
 def evaluate_input_output(input_text: str, output_text: str) -> int:
     def error(msg):
@@ -67,7 +71,7 @@ def evaluate_input_output(input_text: str, output_text: str) -> int:
     return score
 
 
-def evaluate(program_path: str) -> int:
+def evaluate(program_path: str, timeout: float | None = 60) -> int:
     script_dir = Path(__file__).parent.resolve()
     inputs_path = script_dir / "inputs"
     print(inputs_path)
@@ -91,22 +95,44 @@ def evaluate(program_path: str) -> int:
             input_text = f.read()
         try:
             start = time.time()
-            output_text = run_function(input_text)
+            
+            # Set up timeout if specified
+            if timeout is not None:
+                signal.signal(signal.SIGALRM, timeout_handler)
+                signal.alarm(int(timeout))
+            
+            try:
+                output_text = run_function(input_text)
+            finally:
+                # Clear the alarm
+                if timeout is not None:
+                    signal.alarm(0)
+            
             elapsed = time.time() - start
             total_time += elapsed
 
             score = evaluate_input_output(input_text, output_text)
             results[file.name] = score
-        except Exception as e:
-            results[file.name] = f"Evaluation error: {str(e)}"
+        except TimeoutError:
+            # Create a detailed error message for timeout
+            error_msg = f"Timeout processing file '{file.name}' after {timeout} seconds:\n"
+            raise RuntimeError(error_msg)
 
     results['combined_score'] = sum(score for score in results.values() if isinstance(score, int))
     results['throughput'] = round(1/total_time, 3) if total_time != 0 else 0
     return results['combined_score']
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python evaluate.py <program_path>")
+    if len(sys.argv) < 2 or len(sys.argv) > 3:
+        print("Usage: python evaluate.py <program_path> [timeout_seconds]")
         sys.exit(1)
-    result = evaluate(sys.argv[1])
-    print(result)
+    
+    program_path = sys.argv[1]
+    timeout = float(sys.argv[2]) if len(sys.argv) == 3 else None
+    
+    try:
+        result = evaluate(program_path, timeout)
+        print(result)
+    except Exception as e:
+        print(f"Evaluation failed: {e}", file=sys.stderr)
+        sys.exit(1)

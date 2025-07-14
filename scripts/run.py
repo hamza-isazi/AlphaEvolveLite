@@ -13,7 +13,7 @@ def main():
         sys.exit(1)
 
     cfg = Config.load(sys.argv[1])
-    EvolutionController(cfg).run()
+    EvolutionController(cfg).run_evolution()
 
 if __name__ == "__main__":
     main()

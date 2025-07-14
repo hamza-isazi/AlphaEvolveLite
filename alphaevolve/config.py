@@ -23,6 +23,8 @@ class EvolCfg:
     temperature: float
     max_generations: int
     inspiration_count: int
+    max_patch_retries: int = 3  # Number of retries for failed patch applications
+    max_eval_retries: int = 3   # Number of retries for failed evaluations
 
 
 @dataclass

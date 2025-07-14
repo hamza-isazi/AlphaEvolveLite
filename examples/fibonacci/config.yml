@@ -14,6 +14,8 @@ evolution:
   temperature: 1.5
   max_generations: 10         # keeps PoC run short
   inspiration_count: 4        # number of inspirations to use in each generation
+  max_patch_retries: 1        # number of retries for failed patch applications
+  max_eval_retries: 2         # number of retries for failed evaluations
 
 problem:
   entry_script: examples/fibonacci/solution.py

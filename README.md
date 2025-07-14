@@ -38,25 +38,7 @@ python -m venv venv && source venv/bin/activate
 pip install -e .
 ````
 
-2. **Configure PostgreSQL**
-Start a Postgres session
-```bash
-sudo -u postgres psql
-```
-
-Create the DB
-```sql
-CREATE USER ae_user WITH PASSWORD 'ae_pass';
-CREATE DATABASE alphaevolve OWNER ae_user;
-\q
-```
-
-Init the schema
-```bash
-python scripts/init_db.py postgresql://ae_user:ae_pass@localhost/alphaevolve
-```
-
-3. **Run PoC**
+2. **Run PoC**
 
 ```bash
 python -m scripts.run examples/fibonacci/config.yml
