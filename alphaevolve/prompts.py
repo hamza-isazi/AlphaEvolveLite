@@ -27,24 +27,35 @@ TEMPLATE = """\
     Suggest improvements to the program that will lead to better performance on the specified metrics.
 
     You MUST use the exact SEARCH/REPLACE diff format shown below to indicate changes:
+    ```
+    <<<<<<< SEARCH
+    # original lines (one or more consecutive lines)
+    =======
+    # replacement lines (same number of lines or valid replacement)
+    >>>>>>> REPLACE
+    ```
+
+    Example of valid diff format:
+    ```
+    <<<<<<< SEARCH
+    poem stub
+    =======
+    Tyger Tyger, burning bright, In the forests of the night; What immortal hand or eye
+    >>>>>>> REPLACE
+    ```
 
     ### SEARCH/REPLACE block rules
     {evolve_instructions}
-    - Emit *each* independent modification as its own complete block:
-        <<<<<<< SEARCH
-        # original lines (one or more consecutive lines)
-        =======
-        # replacement lines (same number of lines or valid replacement)
-        >>>>>>> REPLACE
+    - Emit *each* independent modification as its own complete block
     - Do **not** nest multiple SEARCH/REPLACE blocks together—each change must start with `<<<<<<< SEARCH` and end with `>>>>>>> REPLACE`.
     - You can suggest multiple changes, they will be applied in order.
     - Each SEARCH section must match the code EXACTLY, including all whitespace, indentation, and newlines.
+    - SEARCH/REPLACE blocks must NOT overlap - each must target different, non-overlapping code sections
     - Be thoughtful about your changes and explain your reasoning thoroughly.
     - Make sure that the changes you propose are consistent with each
     other. For example, if you refer to a new config variable
     somewhere, you should also propose a change to add that
     variable.
-    - IMPORTANT: Do **not** rewrite the entire program - focus on targeted improvements.
     """
 
 EVOLVE_INSTRUCTIONS = """\

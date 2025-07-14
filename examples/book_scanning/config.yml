@@ -40,7 +40,7 @@ llm:
 evolution:
   population_size: 20
   temperature: 1.5
-  max_generations: 100         # keeps PoC run short
+  max_generations: 10
   inspiration_count: 4        # number of inspirations to use in each generation
 
 problem:

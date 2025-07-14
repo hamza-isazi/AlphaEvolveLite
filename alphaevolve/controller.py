@@ -54,7 +54,7 @@ class EvolutionController:
         self.logger.info("Saving top %d candidates", self.cfg.exp.save_top_k)
         rows = self.database.top_k(self.cfg.exp.save_top_k)
         results_dir = Path(f"results/{self.cfg.exp.label}")
-        results_dir.mkdir(exist_ok=True)
+        results_dir.mkdir(parents=True, exist_ok=True)
 
         for row in rows:
             fname = (
