@@ -1,7 +1,7 @@
 import sys
 from io import StringIO
 
-def run(input_text: str) -> str:
+def main(input_text: str) -> str:
     # Create a StringIO object to capture output
     output_buffer = StringIO()
     

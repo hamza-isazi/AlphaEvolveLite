@@ -6,11 +6,7 @@ Best recorded competition score: 27203691
 
 import sys
 import time
-import signal
 from pathlib import Path
-
-def timeout_handler(signum, frame):
-    raise TimeoutError("Function execution timed out")
 
 def evaluate_input_output(input_text: str, output_text: str) -> int:
     def error(msg):
@@ -71,7 +67,7 @@ def evaluate_input_output(input_text: str, output_text: str) -> int:
     return score
 
 
-def evaluate(program_path: str, timeout: float | None = 60) -> int:
+def evaluate(program_path: str) -> int:
     script_dir = Path(__file__).parent.resolve()
     inputs_path = script_dir / "inputs"
     print(inputs_path)
@@ -85,7 +81,7 @@ def evaluate(program_path: str, timeout: float | None = 60) -> int:
     if spec.loader is None:
         raise ImportError(f"Could not load module from {program_path}")
     spec.loader.exec_module(program_module)
-    run_function = program_module.run
+    main_function = program_module.main
 
     results = {}
     total_time = 0.0
@@ -96,26 +92,16 @@ def evaluate(program_path: str, timeout: float | None = 60) -> int:
         try:
             start = time.time()
             
-            # Set up timeout if specified
-            if timeout is not None:
-                signal.signal(signal.SIGALRM, timeout_handler)
-                signal.alarm(int(timeout))
-            
-            try:
-                output_text = run_function(input_text)
-            finally:
-                # Clear the alarm
-                if timeout is not None:
-                    signal.alarm(0)
+            output_text = main_function(input_text)
             
             elapsed = time.time() - start
             total_time += elapsed
 
             score = evaluate_input_output(input_text, output_text)
             results[file.name] = score
-        except TimeoutError:
+        except Exception as e:
             # Create a detailed error message for timeout
-            error_msg = f"Timeout processing file '{file.name}' after {timeout} seconds:\n"
+            error_msg = f"Error processing file '{file.name}': {e}"
             raise RuntimeError(error_msg)
 
     results['combined_score'] = sum(score for score in results.values() if isinstance(score, int))
@@ -123,15 +109,14 @@ def evaluate(program_path: str, timeout: float | None = 60) -> int:
     return results['combined_score']
 
 if __name__ == "__main__":
-    if len(sys.argv) < 2 or len(sys.argv) > 3:
-        print("Usage: python evaluate.py <program_path> [timeout_seconds]")
+    if len(sys.argv) != 2:
+        print("Usage: python evaluate.py <program_path>")
         sys.exit(1)
     
     program_path = sys.argv[1]
-    timeout = float(sys.argv[2]) if len(sys.argv) == 3 else None
     
     try:
-        result = evaluate(program_path, timeout)
+        result = evaluate(program_path)
         print(result)
     except Exception as e:
         print(f"Evaluation failed: {e}", file=sys.stderr)

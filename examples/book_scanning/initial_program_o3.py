@@ -2,7 +2,7 @@
 import sys
 from io import StringIO
 
-def run(input_text: str) -> str:
+def main(input_text: str) -> str:
     out_buf, orig_stdout = StringIO(), sys.stdout
     sys.stdout = out_buf
     try:

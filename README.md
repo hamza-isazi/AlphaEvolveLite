@@ -8,7 +8,8 @@ AlphaEvolveLite/
 ├── alphaevolve/          # Core package
 │   ├── **init**.py
 │   ├── controller.py     # EvolutionController: orchestrates generations
-│   ├── db.py             # PostgresArchive: store candidates & evals
+│   ├── individual_generator.py # Individual generation pipeline (process-safe)
+│   ├── db.py             # EvolutionaryDatabase: store candidates & evals
 │   ├── prompts.py        # PromptSampler: builds LLM prompts from archive + user seed
 │   ├── llm.py            # LLMEngine: wrapper for OpenAI/Ollama etc.
 │   ├── patcher.py        # PatchApplier: applies diff blocks, syntax checks
@@ -48,12 +49,13 @@ python -m scripts.run examples/fibonacci/config.yml
 
 | Module                           | Responsibility                                                                                                    |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `db.PostgresArchive`             | CRUD for programs, metrics, and prompt cache. Minimal schema: `programs(id, code, score, gen, parent_id)`         |
+| `db.EvolutionaryDatabase`        | CRUD for programs, metrics, and prompt cache. Minimal schema: `programs(id, code, score, gen, parent_id)`         |
 | `prompts.PromptSampler`          | Pull top-k & random elites, build prompt with block context, return to `LLMEngine`.                               |
 | `llm.LLMEngine`                  | Single `generate(prompt) → diff` using chosen provider.                                                           |
 | `patcher.PatchApplier`           | Apply diff, run syntax lint; returns valid code or `None`.                                                        |
 | `problem.ProblemAPI`             | User implements `evaluate(path) → float` and tags evolvable regions with `# EVOLVE-START/END`.                    |
 | `controller.EvolutionController` | Loop: sample parent → prompt LLM → patch → eval → store → iterate. Simple Boltzmann selection; single population. |
+| `individual_generator.*`         | Process-safe individual generation pipeline for parallel execution.                                               |
 | `config.Config` & `log.*`        | YAML → dataclass; structured logging to console/file.                                                             |
 
 ## Configuration Snippet
