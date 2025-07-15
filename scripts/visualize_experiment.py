@@ -121,7 +121,8 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     fig.text(0.02, 0.02, stats_text, fontsize=10, verticalalignment='bottom',
              bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
-    plt.tight_layout()
+    # Adjust layout to prevent overlapping labels
+    plt.tight_layout(rect=(0, 0.08, 1, 0.92), h_pad=3.0, w_pad=0.3)
     
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
