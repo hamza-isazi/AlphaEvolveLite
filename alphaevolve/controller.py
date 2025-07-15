@@ -1,8 +1,6 @@
 
 from pathlib import Path
 import concurrent.futures
-from typing import List, Tuple, Optional
-
 from .log import init_logger
 from .patcher import PatchApplier
 from .prompts import PromptSampler
@@ -26,7 +24,10 @@ class EvolutionController:
 
         # Seed archive with original solution
         seed_code = Path(cfg.problem_entry).read_text()
-        seed_score = self.problem.evaluate(cfg.problem_entry)
+        seed_score = self.problem.evaluate_with_timeout(cfg.problem_entry, cfg.evolution.evaluation_timeout)
+        if seed_score is None:
+            self.logger.error("Seed evaluation timed out after %.1f seconds", cfg.evolution.evaluation_timeout)
+            raise RuntimeError("Seed evaluation timed out")
         self.database.add(seed_code, seed_score, gen=0, parent_id=None)
         self.logger.info("Seed score %.3f", seed_score)
 

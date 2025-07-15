@@ -16,6 +16,7 @@ evolution:
   inspiration_count: 4        # number of inspirations to use in each generation
   max_patch_retries: 1        # number of retries for failed patch applications
   max_eval_retries: 2         # number of retries for failed evaluations
+  evaluation_timeout: 30.0    # timeout in seconds for evaluation runs (0 = no timeout)
 
 problem:
   entry_script: examples/fibonacci/solution.py

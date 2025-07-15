@@ -1,6 +1,7 @@
 import tempfile
 import traceback
 import logging
+from concurrent.futures import TimeoutError
 from typing import List, Tuple, Optional, Dict, Any
 
 from .patcher import PatchApplier
@@ -43,7 +44,7 @@ def apply_patch_with_retries(
             break
         
         retry_count += 1
-        if retry_count < max_patch_retries:
+        if retry_count <= max_patch_retries:
             logger.info("Gen %d, Individual %d: patch failed, retrying (%d/%d)", 
                        current_gen, individual_id, retry_count, max_patch_retries)
         else:
@@ -62,6 +63,7 @@ def evaluate_with_retries(
     prompt_sampler: PromptSampler,
     patcher: PatchApplier,
     problem: Problem,
+    evaluation_timeout: float,
     logger: logging.Logger
 ) -> tuple[float | None, str | None]:
     """
@@ -95,26 +97,21 @@ def evaluate_with_retries(
                 tmp.write(current_program)
                 tmp.flush()
                 
-                # Run evaluation
-                score = problem.evaluate(tmp.name)
+                # Run evaluation with timeout
+                score = problem.evaluate_with_timeout(tmp.name, evaluation_timeout)
+                
             break  # Success - exit retry loop
+        except TimeoutError:
+            error_message = f"Evaluation timed out after {evaluation_timeout} seconds"
         except Exception as e:
-            # Get the last frame of the traceback where the error occurred
-            tb = traceback.extract_tb(e.__traceback__)
-            if tb:
-                last_frame = tb[-1]
-                error_message = f"{str(e)}\n  File \"{last_frame.filename}\", line {last_frame.lineno}, in {last_frame.name}"
-                if last_frame.line:
-                    error_message += f"\n    {last_frame.line.strip()}"
-            else:
-                error_message = str(e)
-            retry_count += 1
-            if retry_count < max_eval_retries:
-                logger.info("Gen %d, Individual %d: evaluation failed, retrying (%d/%d): %s", 
-                           current_gen, individual_id, retry_count, max_eval_retries, error_message)
-            else:
-                logger.info("Gen %d, Individual %d: evaluation failed, ran out of retries: %s", 
-                           current_gen, individual_id, error_message)
+            error_message = str(e)
+        retry_count += 1
+        if retry_count <= max_eval_retries:
+            logger.info("Gen %d, Individual %d: evaluation failed, retrying (%d/%d): %s", 
+                        current_gen, individual_id, retry_count, max_eval_retries, error_message)
+        else:
+            logger.info("Gen %d, Individual %d: evaluation failed, ran out of retries: %s", 
+                        current_gen, individual_id, error_message)
     
     return score, current_program
 
@@ -166,7 +163,8 @@ def generate_single_individual(
         # Evaluate with retries
         score, final_program = evaluate_with_retries(
             child_program, individual_llm, individual_id, current_gen,
-            cfg.evolution.max_eval_retries, prompt_sampler, patcher, problem, logger
+            cfg.evolution.max_eval_retries, prompt_sampler, patcher, problem, 
+            cfg.evolution.evaluation_timeout, logger
         )
         
         if score is None or final_program is None:

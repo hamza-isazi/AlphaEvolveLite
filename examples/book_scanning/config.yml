@@ -8,6 +8,7 @@ experiment:
 llm:
   provider: openai
   model: gpt-4o         # or any model your key can access
+  temperature: 0.9
   system_prompt: |
     You are an optimisation expert specialising in logistics and scheduling problems, assisting with a digitisation project involving millions of books from libraries around the world.
 
@@ -37,13 +38,17 @@ llm:
 
     Be concise and efficient. The best solutions smartly balance early signups, book scores, and daily throughput.
 
+    Your solution should be a valid Python program with the main function called `main`, which takes a string of
+    input data and returns a string of output data.
+
 evolution:
-  population_size: 20
+  population_size: 4
   temperature: 1.5
   max_generations: 10
   inspiration_count: 4        # number of inspirations to use in each generation
   max_patch_retries: 1        # number of retries for failed patch applications
-  max_eval_retries: 2         # number of retries for failed evaluations
+  max_eval_retries: 3         # number of retries for failed evaluations
+  evaluation_timeout: 60.0    # timeout in seconds for evaluation runs (0 = no timeout)
 
 problem:
   entry_script: examples/book_scanning/initial_program.py
