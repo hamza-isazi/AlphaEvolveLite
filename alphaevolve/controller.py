@@ -58,7 +58,7 @@ class EvolutionController:
         
         # Generate individuals in parallel
         successful_individuals = 0
-        with concurrent.futures.ProcessPoolExecutor(max_workers=min(population_size, 4)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 80)) as executor:
             # Submit all individual generation tasks with pre-sampled data
             future_to_id = {
                 executor.submit(generate_single_individual, i, parent_data, self.current_gen, self.cfg, self.logger): i 
