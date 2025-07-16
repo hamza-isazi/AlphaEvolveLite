@@ -1,6 +1,7 @@
 # --- Core runtime dependencies ---
 openai>=1.14.0          # LLM API client
 PyYAML>=6.0             # Config file parsing
+tqdm>=4.65.0            # Progress bars
 
 # --- Visualization dependencies ---
 matplotlib>=3.7.0       # Plotting library

@@ -36,6 +36,7 @@ class Config:
     evolution: EvolCfg
     problem_entry: str
     problem_eval: str
+    debug: bool = False  # Control logging verbosity
 
     @classmethod
     def load(cls, path: str | Path) -> "Config":
@@ -48,4 +49,5 @@ class Config:
             evolution=EvolCfg(**data["evolution"]),
             problem_entry=data["problem"]["entry_script"],
             problem_eval=data["problem"]["evaluator"],
+            debug=data.get("debug", False),  # Default to False if not specified
         )

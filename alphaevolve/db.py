@@ -227,7 +227,7 @@ class EvolutionaryDatabase:
         selected = random.choices(programs, weights=probabilities, k=min(k, len(programs)))
         return selected
 
-    def sample(self, selection_method: str = "top_k_and_random") -> Tuple[dict, List[dict]]:
+    def sample(self, selection_method: str = "boltzmann") -> Tuple[dict, List[dict]]:
         """
         Pick a single parent row to mutate and a list of inspiration rows
         for prompt context. Inspirations are selected using the specified method.

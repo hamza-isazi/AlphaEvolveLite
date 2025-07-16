@@ -45,10 +45,10 @@ def apply_patch_with_retries(
         
         retry_count += 1
         if retry_count <= max_patch_retries:
-            logger.info("Gen %d, Individual %d: patch failed, retrying (%d/%d)", 
+            logger.debug("Gen %d, Individual %d: patch failed, retrying (%d/%d)", 
                        current_gen, individual_id, retry_count, max_patch_retries)
         else:
-            logger.info("Gen %d, Individual %d: patch failed, ran out of retries", 
+            logger.debug("Gen %d, Individual %d: patch failed, ran out of retries", 
                        current_gen, individual_id)
     
     return child_program
@@ -65,17 +65,19 @@ def evaluate_with_retries(
     problem: Problem,
     evaluation_timeout: float,
     logger: logging.Logger
-) -> tuple[float | None, str | None]:
+) -> tuple[float | None, str | None, str | None]:
     """
     Evaluate a program with retry logic for evaluation failures.
     
     Returns:
-        Tuple of (score, final_child_program)
+        Tuple of (score, final_child_program, failure_type)
+        failure_type is None if successful, otherwise describes the failure
     """
     retry_count = 0
     score = None
     error_message = "Unknown error"
     current_program = child_program
+    failure_type = None
     
     while retry_count <= max_eval_retries:
         if retry_count > 0:
@@ -89,6 +91,7 @@ def evaluate_with_retries(
                 current_program = new_child_program
             else:
                 # If the retry diff fails, break out of retry loop
+                failure_type = "patch_failure"
                 break
         
         try:
@@ -103,17 +106,19 @@ def evaluate_with_retries(
             break  # Success - exit retry loop
         except TimeoutError:
             error_message = f"Evaluation timed out after {evaluation_timeout} seconds"
+            failure_type = "timeout"
         except Exception as e:
             error_message = str(e)
+            failure_type = "runtime_error"
         retry_count += 1
         if retry_count <= max_eval_retries:
-            logger.info("Gen %d, Individual %d: evaluation failed, retrying (%d/%d): %s", 
+            logger.debug("Gen %d, Individual %d: evaluation failed, retrying (%d/%d): %s", 
                         current_gen, individual_id, retry_count, max_eval_retries, error_message)
-        else:
-            logger.info("Gen %d, Individual %d: evaluation failed, ran out of retries: %s", 
+        elif retry_count > max_eval_retries:
+            logger.debug("Gen %d, Individual %d: evaluation failed, ran out of retries: %s", 
                         current_gen, individual_id, error_message)
     
-    return score, current_program
+    return score, current_program, failure_type
 
 
 def generate_single_individual(
@@ -122,7 +127,7 @@ def generate_single_individual(
     current_gen: int,
     cfg: Config,
     logger: logging.Logger
-) -> Optional[Tuple[float, str, int]]:
+) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
     """
     Generate a single individual for the population using pre-sampled data.
     
@@ -131,14 +136,12 @@ def generate_single_individual(
     to generate and evaluate a single individual in isolation.
     
     Returns:
-        Tuple of (score, program, parent_id) if successful, None if failed
+        Tuple of (result_dict, failure_type)
+        - result_dict: Dict with 'score', 'program', 'parent_id' if successful, None if failed
+        - failure_type: None if successful, otherwise describes the failure
     """
     try:
         parent_row, inspiration_rows = parent_data
-        
-        if parent_row is None:
-            logger.info("Gen %d, Individual %d: no parent data available, skipping", current_gen, individual_id)
-            return None
         
         # Create instances for this individual to avoid conflicts
         individual_llm = OpenAIEngine(cfg.llm)
@@ -157,24 +160,29 @@ def generate_single_individual(
         )
         
         if not child_program or not patcher.is_valid(child_program):
-            logger.info("Gen %d, Individual %d: invalid patch, skipping", current_gen, individual_id)
-            return None
+            logger.debug("Gen %d, Individual %d: invalid patch, skipping", current_gen, individual_id)
+            return None, "patch_failure"
 
         # Evaluate with retries
-        score, final_program = evaluate_with_retries(
+        score, final_program, failure_type = evaluate_with_retries(
             child_program, individual_llm, individual_id, current_gen,
             cfg.evolution.max_eval_retries, prompt_sampler, patcher, problem, 
             cfg.evolution.evaluation_timeout, logger
         )
         
         if score is None or final_program is None:
-            logger.info("Gen %d, Individual %d: evaluation failed, skipping", current_gen, individual_id)
-            return None
+            logger.debug("Gen %d, Individual %d: evaluation failed (%s), skipping", 
+                       current_gen, individual_id, failure_type or "unknown")
+            return None, failure_type or "evaluation_failure"
 
         # Success
-        logger.info("Gen %d, Individual %d: new score %.3f", current_gen, individual_id, score)
-        return score, final_program, parent_row["id"]
+        logger.debug("Gen %d, Individual %d: new score %.3f", current_gen, individual_id, score)
+        return {
+            "score": score,
+            "program": final_program,
+            "parent_id": parent_row["id"]
+        }, None
         
     except Exception as e:
         logger.error("Gen %d, Individual %d: unexpected error: %s", current_gen, individual_id, str(e))
-        return None 
+        return None, "unexpected_error" 

@@ -18,7 +18,7 @@ AlphaEvolveLite/
 │   └── log.py            # Opinionated logging setup
 ├── scripts/
 │   ├── init\_db.py       # Creates tables & indices in PostgreSQL
-│   └── run.py            # CLI entry-point: `python -m scripts.run config.yml`
+│   └── run.py            # CLI entry-point: `python -m scripts.run config.yml [--debug]`
 ├── examples/
 │   ├── fibonacci/
 │   │   ├── solution.py   # Starter code with EVOLVE markers
@@ -28,7 +28,7 @@ AlphaEvolveLite/
 ├── tests/                # Pytest smoke tests for each module
 ├── pyproject.toml        # Poetry/PEP 518 build metadata
 └── README.md             # (this file)
-````
+```
 
 ## Quick Start
 
@@ -37,13 +37,35 @@ AlphaEvolveLite/
 ```bash
 python -m venv venv && source venv/bin/activate
 pip install -e .
-````
+```
 
 2. **Run PoC**
 
 ```bash
+# Normal mode with progress bars and generation summaries
 python -m scripts.run examples/fibonacci/config.yml
+
+# Debug mode with verbose individual-level logging
+python -m scripts.run examples/fibonacci/config.yml --debug
 ```
+
+## Logging Features
+
+The system provides two logging modes:
+
+### Normal Mode (Default)
+- **Progress bars**: TQDM progress bars for each generation
+- **Generation summaries**: At the end of each generation, displays:
+  - Success rate (successful/total individuals)
+  - Average and best fitness scores
+  - Failure breakdown (runtime errors, timeouts, patch failures, etc.)
+- **Clean output**: Minimal clutter for large populations
+
+### Debug Mode (`--debug` flag)
+- **Verbose logging**: Individual-level details for each attempt
+- **Retry information**: Patch and evaluation retry attempts
+- **Error details**: Specific failure reasons and error messages
+- **Full trace**: Complete evolution process visibility
 
 ## Core Components
 
@@ -72,6 +94,8 @@ evolution:
 problem:
   entry_script: examples/fibonacci/solution.py
   evaluator:  examples/fibonacci/evaluate.py
+# Debug flag (can also be set via --debug command line argument)
+debug: false                  # Set to true for verbose individual-level logging
 ```
 
 ## Contributing

@@ -70,7 +70,6 @@ def evaluate_input_output(input_text: str, output_text: str) -> int:
 def evaluate(program_path: str) -> int:
     script_dir = Path(__file__).parent.resolve()
     inputs_path = script_dir / "inputs"
-    print(inputs_path)
 
     # Import the run function from the program
     import importlib.util
