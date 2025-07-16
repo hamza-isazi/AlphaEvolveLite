@@ -125,7 +125,7 @@ class PromptSampler:
             
         prompt = TEMPLATE.format(
             parent=self._format_rows([parent_row]),
-            inspirations=self._format_rows(inspiration_rows),
+            inspirations=self._format_rows(inspiration_rows) if inspiration_rows else "None yet.",
             evolve_instructions=evolve_instructions,
         )
         return prompt
