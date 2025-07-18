@@ -30,12 +30,13 @@ class EvolutionaryDatabase:
 
             CREATE TABLE IF NOT EXISTS programs (
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                code TEXT NOT NULL,
                 explanation TEXT NOT NULL,
-                score REAL NOT NULL,
+                code TEXT,
+                score REAL,
                 gen  INTEGER NOT NULL,
                 parent_id INTEGER,
                 experiment_id INTEGER NOT NULL,
+                failure_type TEXT,
                 FOREIGN KEY(experiment_id) REFERENCES experiments(id)
                      ON DELETE CASCADE
             );
@@ -57,9 +58,24 @@ class EvolutionaryDatabase:
         )
         return cur.execute("SELECT id FROM experiments WHERE label = ?", (label,)).fetchone()[0]
 
-    def add(self, code: str, explanation: str, score: float, gen: int, parent_id: Optional[int]) -> int:
+    def add(self, code: str, explanation: str, score: Optional[float], gen: int, parent_id: Optional[int], failure_type: Optional[str] = None) -> int:
         """
         Add a program to the database.
+
+        Parameters
+        ----------
+        code : str
+            The program code
+        explanation : str
+            Explanation of the changes made
+        score : Optional[float]
+            The evaluation score (None for failed programs)
+        gen : int
+            Generation number
+        parent_id : Optional[int]
+            ID of the parent program
+        failure_type : Optional[str]
+            Type of failure if the program failed (e.g., "syntax_error", "timeout", etc.)
 
         Returns
         -------
@@ -69,10 +85,10 @@ class EvolutionaryDatabase:
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (code, explanation, score, gen, parent_id, self.experiment_id),
+            (code, explanation, score, gen, parent_id, self.experiment_id, failure_type),
         )
         lastrowid = cur.lastrowid
         if lastrowid is None:
@@ -92,7 +108,7 @@ class EvolutionaryDatabase:
         cur.execute(
             """
             SELECT * FROM programs
-            WHERE experiment_id = ?
+            WHERE experiment_id = ? AND failure_type IS NULL
             ORDER BY score DESC
             LIMIT ?
             """,
@@ -113,7 +129,7 @@ class EvolutionaryDatabase:
         cur.execute(
             """
             SELECT * FROM programs
-            WHERE experiment_id = ?
+            WHERE experiment_id = ? AND failure_type IS NULL
             ORDER BY RANDOM()
             LIMIT ?
             """,
@@ -143,7 +159,7 @@ class EvolutionaryDatabase:
         cur.execute(
             """
             SELECT * FROM programs
-            WHERE experiment_id = ?
+            WHERE experiment_id = ? AND failure_type IS NULL
             """,
             (self.experiment_id,),
         )
@@ -196,7 +212,7 @@ class EvolutionaryDatabase:
         cur.execute(
             """
             SELECT * FROM programs
-            WHERE experiment_id = ?
+            WHERE experiment_id = ? AND failure_type IS NULL
             """,
             (self.experiment_id,),
         )

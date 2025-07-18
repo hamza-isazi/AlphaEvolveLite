@@ -47,7 +47,7 @@ def get_experiment_data(db_path: str, experiment_id: int) -> list:
     
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, code, score, gen, parent_id, experiment_id
+        SELECT id, code, score, gen, parent_id, experiment_id, failure_type
         FROM programs
         WHERE experiment_id = ?
         ORDER BY gen, score DESC
@@ -64,9 +64,24 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
         print("No programs found for this experiment.")
         return
     
-    # Extract data
-    generations = [p['gen'] for p in programs]
-    scores = [p['score'] for p in programs]
+    # Filter out failed programs (those with failure_type not None)
+    successful_programs = [p for p in programs if p['failure_type'] is None]
+    failed_programs = [p for p in programs if p['failure_type'] is not None]
+    
+    if not successful_programs:
+        print("No successful programs found for this experiment.")
+        return
+    
+    # Extract data from successful programs only
+    generations = [p['gen'] for p in successful_programs]
+    scores = [p['score'] for p in successful_programs]
+    
+    # Get all distinct failure types
+    failure_types = set()
+    for p in failed_programs:
+        if p['failure_type'] is not None:
+            failure_types.add(p['failure_type'])
+    failure_types = sorted(list(failure_types))
     
     # Create figure with multiple subplots
     fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
@@ -103,16 +118,54 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     ax3.set_title('Average Score per Generation')
     ax3.grid(True, alpha=0.3)
     
-    # 4. Score distribution histogram
-    ax4.hist(scores, bins=30, alpha=0.7, color='purple', edgecolor='black')
-    ax4.set_xlabel('Score')
-    ax4.set_ylabel('Frequency')
-    ax4.set_title('Score Distribution')
+    # 4. Success and Failure Rates per Generation
+    # Group all programs by generation
+    gen_to_programs = {}
+    for p in programs:
+        gen = p['gen']
+        if gen not in gen_to_programs:
+            gen_to_programs[gen] = []
+        gen_to_programs[gen].append(p)
+    
+    all_gens = sorted(gen_to_programs.keys())
+    
+    # Calculate success rate per generation
+    success_rates = []
+    for gen in all_gens:
+        gen_programs = gen_to_programs[gen]
+        successful_count = sum(1 for p in gen_programs if p['failure_type'] is None)
+        success_rate = (successful_count / len(gen_programs)) * 100
+        success_rates.append(success_rate)
+    
+    # Plot success rate
+    ax4.plot(all_gens, success_rates, 'o-', linewidth=2, markersize=6, color='green', label='Success Rate')
+    
+    # Calculate and plot failure rates for each failure type
+    colors = ['red', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+    for i, failure_type in enumerate(failure_types):
+        failure_rates = []
+        for gen in all_gens:
+            gen_programs = gen_to_programs[gen]
+            failure_count = sum(1 for p in gen_programs if p['failure_type'] == failure_type)
+            failure_rate = (failure_count / len(gen_programs)) * 100
+            failure_rates.append(failure_rate)
+        
+        color = colors[i % len(colors)]
+        ax4.plot(all_gens, failure_rates, 'o-', linewidth=2, markersize=4, color=color, label=f'{failure_type}')
+    
+    ax4.set_xlabel('Generation')
+    ax4.set_ylabel('Percentage (%)')
+    ax4.set_title('Success and Failure Rates per Generation')
     ax4.grid(True, alpha=0.3)
+    ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
+    ax4.set_ylim(0, 100)
     
     # Add statistics text
     stats_text = f"""
     Total Programs: {len(programs)}
+    Successful: {len(successful_programs)}
+    Failed: {len(failed_programs)}
+    Success Rate: {len(successful_programs)/len(programs)*100:.1f}%
     Generations: {len(best_gens)}
     Best Score: {max(scores):.4f}
     Average Score: {np.mean(scores):.4f}
@@ -188,9 +241,29 @@ def main():
         print(f"No programs found for experiment '{args.experiment}'")
         return
     
-    print(f"Found {len(programs)} programs for experiment '{args.experiment}'")
-    print(f"Generations: {min(p['gen'] for p in programs)} to {max(p['gen'] for p in programs)}")
-    print(f"Score range: {min(p['score'] for p in programs):.4f} to {max(p['score'] for p in programs):.4f}")
+    # Filter programs for statistics
+    successful_programs = [p for p in programs if p['failure_type'] is None]
+    failed_programs = [p for p in programs if p['failure_type'] is not None]
+    
+    print(f"Found {len(programs)} total programs for experiment '{args.experiment}'")
+    print(f"  - Successful: {len(successful_programs)}")
+    print(f"  - Failed: {len(failed_programs)}")
+    print(f"  - Success rate: {len(successful_programs)/len(programs)*100:.1f}%")
+    
+    if successful_programs:
+        print(f"Generations: {min(p['gen'] for p in programs)} to {max(p['gen'] for p in programs)}")
+        print(f"Score range: {min(p['score'] for p in successful_programs):.4f} to {max(p['score'] for p in successful_programs):.4f}")
+    
+    if failed_programs:
+        # Count failure types
+        failure_counts = {}
+        for p in failed_programs:
+            failure_type = p['failure_type']
+            failure_counts[failure_type] = failure_counts.get(failure_type, 0) + 1
+        
+        print("Failure breakdown:")
+        for failure_type, count in sorted(failure_counts.items()):
+            print(f"  - {failure_type}: {count}")
     
     # Create visualization
     create_visualization(programs, experiment['label'], args.output)

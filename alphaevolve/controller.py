@@ -62,8 +62,8 @@ class EvolutionController:
                 "invalid_response_failures": 0
             }
         
-        successful_results = [r for r in generation_results if r["success"]]
-        failed_results = [r for r in generation_results if not r["success"]]
+        successful_results = [r for r in generation_results if r["score"] is not None]
+        failed_results = [r for r in generation_results if r["score"] is None]
         
         # Calculate fitness statistics
         fitness_scores = [r["score"] for r in successful_results]
@@ -156,39 +156,28 @@ class EvolutionController:
                 for future in concurrent.futures.as_completed(future_to_id):
                     individual_id = future_to_id[future]
                     try:
-                        result_dict, failure_type = future.result()
+                        result = future.result()
                         
-                        if result_dict is not None:
-                            # Add to database
-                            pid = self.database.add(
-                                result_dict["program"],
-                                result_dict["explanation"],
-                                result_dict["score"], 
-                                self.current_gen, 
-                                result_dict["parent_id"]                                
-                            )
+                        # Add program to database (successful or failed)
+                        pid = self.database.add(
+                            result["program"],
+                            result["explanation"],
+                            result["score"], 
+                            self.current_gen, 
+                            result["parent_id"],
+                            result["failure_type"]
+                        )
+                        
+                        if result["score"] is not None:
                             successful_individuals += 1
-                            generation_results.append({
-                                "success": True,
-                                "score": result_dict["score"],
-                                "individual_id": individual_id,
-                                "db_id": pid
-                            })
-                            self.logger.debug("Gen %d, Individual %d: added to database with id %d", 
-                                            self.current_gen, individual_id, pid)
-                        else:
-                            generation_results.append({
-                                "success": False,
-                                "failure_type": failure_type,
-                                "individual_id": individual_id
-                            })
-                    except Exception as e:
+                        
                         generation_results.append({
-                            "success": False,
-                            "failure_type": "exception",
-                            "error": str(e),
-                            "individual_id": individual_id
+                            "score": result["score"],
+                            "failure_type": result["failure_type"],
+                            "individual_id": individual_id,
+                            "db_id": pid
                         })
+                    except Exception as e:
                         self.logger.error("Gen %d, Individual %d: failed with exception: %s", 
                                         self.current_gen, individual_id, str(e))
                     

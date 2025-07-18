@@ -40,7 +40,7 @@ def apply_patch_with_retries(
             response = llm_instance.generate(retry_prompt)
             
             # For retries, just extract code (no explanation needed)
-            _, code_section = parse_structured_response(response, require_explanation=False)
+            _, code_section = parse_structured_response(response)
             if code_section is None:
                 # If no code found, break out of retry loop
                 break
@@ -72,7 +72,7 @@ def evaluate_with_retries(
     problem: Problem,
     evaluation_timeout: float,
     logger: logging.Logger
-) -> tuple[float | None, str | None, str | None]:
+) -> tuple[float | None, str, str | None]:
     """
     Evaluate a program with retry logic for evaluation failures.
     
@@ -93,7 +93,7 @@ def evaluate_with_retries(
             response = llm_instance.generate(retry_prompt)
             
             # For retries, just extract code (no explanation needed)
-            _, code_section = parse_structured_response(response, require_explanation=False)
+            _, code_section = parse_structured_response(response)
             if code_section is None:
                 # If no code found, break out of retry loop
                 failure_type = "invalid_response"
@@ -146,7 +146,7 @@ def generate_single_individual(
     current_gen: int,
     cfg: Config,
     logger: logging.Logger
-) -> Tuple[Optional[Dict[str, Any]], Optional[str]]:
+) -> Dict[str, Any]:
     """
     Generate a single individual for the population using pre-sampled data.
     
@@ -155,60 +155,70 @@ def generate_single_individual(
     to generate and evaluate a single individual in isolation.
     
     Returns:
-        Tuple of (result_dict, failure_type)
-        - result_dict: Dict with 'score', 'program', 'explanation', 'parent_id' if successful, None if failed
-        - failure_type: None if successful, otherwise describes the failure
+        Dict:
+        - score: float | None - fitness score if successful, None if failed
+        - program: str - the program code (parent code if failed)
+        - explanation: str - LLM's explanation of changes (empty if failed)
+        - parent_id: int - ID of the parent individual
+        - failure_type: str | None - type of failure if unsuccessful, None if successful
     """
-    try:
-        parent_row, inspiration_rows = parent_data
-        
-        # Create instances for this individual to avoid conflicts
-        individual_llm = OpenAIEngine(cfg.llm)
-        patcher = PatchApplier()
-        problem = Problem(cfg.problem_entry, cfg.problem_eval)
-        prompt_sampler = PromptSampler(None)  # No database needed for prompt building
-        
-        # Initial prompt
-        prompt = prompt_sampler.build(parent_row, inspiration_rows)
-        initial_response = individual_llm.generate(prompt)
-        
-        # Parse initial response to get explanation and code
-        explanation, code_section = parse_structured_response(initial_response, require_explanation=True)
-        if code_section is None:
-            logger.debug("Gen %d, Individual %d: invalid initial response (missing explanation or code), skipping", current_gen, individual_id)
-            return None, "invalid_response"
-        
-        # Apply patch with retries
-        child_program = apply_patch_with_retries(
-            parent_row, code_section, individual_llm, individual_id, 
-            current_gen, cfg.evolution.max_patch_retries, prompt_sampler, patcher, logger
-        )
-        
-        if not child_program:
-            logger.debug("Gen %d, Individual %d: invalid patch, skipping", current_gen, individual_id)
-            return None, "patch_failure"
-
-        # Evaluate with retries
-        score, final_program, failure_type = evaluate_with_retries(
-            child_program, individual_llm, individual_id, current_gen,
-            cfg.evolution.max_eval_retries, prompt_sampler, patcher, problem, 
-            cfg.evolution.evaluation_timeout, logger
-        )
-        
-        if score is None or final_program is None:
-            logger.debug("Gen %d, Individual %d: evaluation failed (%s), skipping", 
-                       current_gen, individual_id, failure_type or "unknown")
-            return None, failure_type or "evaluation_failure"
-
-        # Success
-        logger.debug("Gen %d, Individual %d: new score %.3f", current_gen, individual_id, score)
+    parent_row, inspiration_rows = parent_data
+    
+    # Create instances for this individual to avoid conflicts
+    individual_llm = OpenAIEngine(cfg.llm)
+    patcher = PatchApplier()
+    problem = Problem(cfg.problem_entry, cfg.problem_eval)
+    prompt_sampler = PromptSampler(None)  # No database needed for prompt building
+    
+    # Initial prompt
+    prompt = prompt_sampler.build(parent_row, inspiration_rows)
+    initial_response = individual_llm.generate(prompt)
+    
+    # Parse initial response to get explanation and code
+    explanation, code_section = parse_structured_response(initial_response)
+    if explanation is None or code_section is None:
+        raise ValueError("Invalid initial response")
+    
+    # Apply patch with retries
+    child_program = apply_patch_with_retries(
+        parent_row, code_section, individual_llm, individual_id, 
+        current_gen, cfg.evolution.max_patch_retries, prompt_sampler, patcher, logger
+    )
+    
+    if not child_program:
+        logger.debug("Gen %d, Individual %d: invalid patch, skipping", current_gen, individual_id)
         return {
-            "score": score,
-            "program": final_program,
+            "score": None,
             "explanation": explanation,
-            "parent_id": parent_row["id"]
-        }, None
-        
-    except Exception as e:
-        logger.error("Gen %d, Individual %d: unexpected error: %s", current_gen, individual_id, str(e))
-        return None, "unexpected_error" 
+            "program": None,
+            "parent_id": parent_row["id"],
+            "failure_type": "patch_failure"
+        }
+
+    # Evaluate with retries
+    score, final_program, failure_type = evaluate_with_retries(
+        child_program, individual_llm, individual_id, current_gen,
+        cfg.evolution.max_eval_retries, prompt_sampler, patcher, problem, 
+        cfg.evolution.evaluation_timeout, logger
+    )
+    
+    if score is None:
+        logger.debug("Gen %d, Individual %d: evaluation failed (%s), skipping", 
+                    current_gen, individual_id, failure_type or "unknown")
+        return {
+            "score": None,
+            "explanation": explanation,
+            "program": final_program,
+            "parent_id": parent_row["id"],
+            "failure_type": failure_type or "evaluation_failure"
+        }
+
+    # Success
+    logger.debug("Gen %d, Individual %d: new score %.3f", current_gen, individual_id, score)
+    return {
+        "score": score,
+        "program": final_program,
+        "explanation": explanation,
+        "parent_id": parent_row["id"],
+        "failure_type": None
+    }
