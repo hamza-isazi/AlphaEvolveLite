@@ -9,11 +9,12 @@ from .prompts import PromptSampler
 from .problem import Problem
 from .llm import OpenAIEngine
 from .config import Config
+from .response_parser import parse_structured_response
 
 
 def apply_patch_with_retries(
     parent_row: dict, 
-    initial_diff: str, 
+    initial_code: str, 
     llm_instance: OpenAIEngine, 
     individual_id: int,
     current_gen: int,
@@ -30,17 +31,23 @@ def apply_patch_with_retries(
     """
     retry_count = 0
     child_program = None
-    diff = initial_diff
+    code_section = initial_code
     
     while retry_count <= max_patch_retries:
         if retry_count > 0:
             # This is a retry - generate a retry prompt
             retry_prompt = prompt_sampler.build_patch_retry_prompt(parent_row)
-            diff = llm_instance.generate(retry_prompt)
+            response = llm_instance.generate(retry_prompt)
+            
+            # For retries, just extract code (no explanation needed)
+            _, code_section = parse_structured_response(response, require_explanation=False)
+            if code_section is None:
+                # If no code found, break out of retry loop
+                break
         
-        child_program = patcher.apply_diff(parent_row["code"], diff)
+        child_program = patcher.apply_diff(parent_row["code"], code_section)
         
-        if child_program and patcher.is_valid(child_program):
+        if child_program:
             break
         
         retry_count += 1
@@ -83,18 +90,27 @@ def evaluate_with_retries(
         if retry_count > 0:
             # This is a retry - generate a retry prompt for evaluation error
             retry_prompt = prompt_sampler.build_eval_retry_prompt(current_program, error_message)
-            diff = llm_instance.generate(retry_prompt)
+            response = llm_instance.generate(retry_prompt)
+            
+            # For retries, just extract code (no explanation needed)
+            _, code_section = parse_structured_response(response, require_explanation=False)
+            if code_section is None:
+                # If no code found, break out of retry loop
+                failure_type = "invalid_response"
+                break
             
             # Apply the new diff
-            new_child_program = patcher.apply_diff(current_program, diff)
-            if new_child_program and patcher.is_valid(new_child_program):
+            new_child_program = patcher.apply_diff(current_program, code_section)
+            if new_child_program:
                 current_program = new_child_program
             else:
                 # If the retry diff fails, break out of retry loop
-                failure_type = "patch_failure"
+                failure_type = "secondary_patch_failure"
                 break
         
         try:
+            # Compile the program to check for syntax errors
+            compile(current_program, "<candidate>", "exec")
             # Write to temp file for evaluator
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=True) as tmp:
                 tmp.write(current_program)
@@ -104,6 +120,9 @@ def evaluate_with_retries(
                 score = problem.evaluate_with_timeout(tmp.name, evaluation_timeout)
                 
             break  # Success - exit retry loop
+        except SyntaxError as e:
+            error_message = f"Syntax error: {str(e)}"
+            failure_type = "syntax_error"
         except TimeoutError:
             error_message = f"Evaluation timed out after {evaluation_timeout} seconds"
             failure_type = "timeout"
@@ -137,7 +156,7 @@ def generate_single_individual(
     
     Returns:
         Tuple of (result_dict, failure_type)
-        - result_dict: Dict with 'score', 'program', 'parent_id' if successful, None if failed
+        - result_dict: Dict with 'score', 'program', 'explanation', 'parent_id' if successful, None if failed
         - failure_type: None if successful, otherwise describes the failure
     """
     try:
@@ -151,15 +170,21 @@ def generate_single_individual(
         
         # Initial prompt
         prompt = prompt_sampler.build(parent_row, inspiration_rows)
-        initial_diff = individual_llm.generate(prompt)
+        initial_response = individual_llm.generate(prompt)
+        
+        # Parse initial response to get explanation and code
+        explanation, code_section = parse_structured_response(initial_response, require_explanation=True)
+        if code_section is None:
+            logger.debug("Gen %d, Individual %d: invalid initial response (missing explanation or code), skipping", current_gen, individual_id)
+            return None, "invalid_response"
         
         # Apply patch with retries
         child_program = apply_patch_with_retries(
-            parent_row, initial_diff, individual_llm, individual_id, 
+            parent_row, code_section, individual_llm, individual_id, 
             current_gen, cfg.evolution.max_patch_retries, prompt_sampler, patcher, logger
         )
         
-        if not child_program or not patcher.is_valid(child_program):
+        if not child_program:
             logger.debug("Gen %d, Individual %d: invalid patch, skipping", current_gen, individual_id)
             return None, "patch_failure"
 
@@ -180,6 +205,7 @@ def generate_single_individual(
         return {
             "score": score,
             "program": final_program,
+            "explanation": explanation,
             "parent_id": parent_row["id"]
         }, None
         

@@ -5,6 +5,10 @@ _DIFF_RE = re.compile(
     r"<<{4,}\s*SEARCH\s*\n(.*?)\n={4,}\s*\n(.*?)\n>{4,}\s*REPLACE",
     re.DOTALL,
 )
+_FULL_FILE_RE = re.compile(
+    r"###\s*Full\s*File\s*Replacement\s*\n(.*)",
+    re.DOTALL,
+)
 _EVOLVE_RE = re.compile(
     r"#\s*EVOLVE-BLOCK-START(.*?)#\s*EVOLVE-BLOCK-END",
     re.DOTALL,
@@ -130,6 +134,20 @@ class PatchApplier:
         source = PatchApplier._remove_right_whitespace(source)
         diff_text = PatchApplier._remove_right_whitespace(diff_text)
         
+        # Check for full file replacement first
+        full_file_match = _FULL_FILE_RE.search(diff_text)
+        if full_file_match:
+            new_code = full_file_match.group(1).strip()
+            # Remove markdown code block markers if present
+            if new_code.startswith('```'):
+                lines = new_code.split('\n')
+                if len(lines) > 2:
+                    new_code = '\n'.join(lines[1:-1])
+            # Also remove any trailing ``` that might be left
+            new_code = new_code.rstrip('`')
+            return new_code
+        
+        # Handle SEARCH/REPLACE format
         regions = PatchApplier._evolve_regions(source)
         new = source
         for search, replace in _DIFF_RE.findall(diff_text):            
@@ -175,11 +193,3 @@ class PatchApplier:
         if new == source:
             return None
         return new
-
-    @staticmethod
-    def is_valid(py_code: str) -> bool:
-        try:
-            compile(py_code, "<candidate>", "exec")
-            return True
-        except SyntaxError:
-            return False

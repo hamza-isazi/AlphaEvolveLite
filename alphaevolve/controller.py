@@ -31,7 +31,7 @@ class EvolutionController:
         if seed_score is None:
             self.logger.error("Seed evaluation timed out after %.1f seconds", cfg.evolution.evaluation_timeout)
             raise RuntimeError("Seed evaluation timed out")
-        self.database.add(seed_code, seed_score, gen=0, parent_id=None)
+        self.database.add(code=seed_code, explanation="Initial seed program", score=seed_score, gen=0, parent_id=None)
         self.logger.info("Seed score %.3f", seed_score)
 
     def _calculate_generation_stats(self, generation_results: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -57,7 +57,9 @@ class EvolutionController:
                 "best_fitness": 0.0,
                 "evaluation_failures": 0,
                 "timeouts": 0,
-                "patch_failures": 0
+                "patch_failures": 0,
+                "secondary_patch_failures": 0,
+                "invalid_response_failures": 0
             }
         
         successful_results = [r for r in generation_results if r["success"]]
@@ -69,19 +71,25 @@ class EvolutionController:
         best_fitness = max(fitness_scores) if fitness_scores else 0.0
         
         # Count different types of failures
+        syntax_errors = sum(1 for r in failed_results if r["failure_type"] == "syntax_error")
         evaluation_failures = sum(1 for r in failed_results if r["failure_type"] == "runtime_error")
         timeouts = sum(1 for r in failed_results if r["failure_type"] == "timeout")
         patch_failures = sum(1 for r in failed_results if r["failure_type"] == "patch_failure")
-        
+        secondary_patch_failures = sum(1 for r in failed_results if r["failure_type"] == "secondary_patch_failure")
+        invalid_response_failures = sum(1 for r in failed_results if r["failure_type"] == "invalid_response")
+
         return {
             "total_individuals": len(generation_results),
             "successful_individuals": len(successful_results),
             "success_rate": len(successful_results) / len(generation_results) * 100,
             "avg_fitness": avg_fitness,
             "best_fitness": best_fitness,
+            "syntax_errors": syntax_errors,
             "evaluation_failures": evaluation_failures,
             "timeouts": timeouts,
-            "patch_failures": patch_failures
+            "patch_failures": patch_failures,
+            "secondary_patch_failures": secondary_patch_failures,
+            "invalid_response_failures": invalid_response_failures
         }
 
     def _log_generation_summary(self, gen: int, stats: Dict[str, Any]) -> None:
@@ -100,10 +108,13 @@ class EvolutionController:
         self.logger.info("  Success Rate: %d/%d (%.1f%%)", 
                         stats["successful_individuals"], stats["total_individuals"], stats["success_rate"])
         self.logger.info("  Fitness - Avg: %.3f, Best: %.3f", stats["avg_fitness"], stats["best_fitness"])
-        self.logger.info("  Failures - Evaluation: %d (%.1f%%), Timeouts: %d (%.1f%%), Patches: %d (%.1f%%)",
+        self.logger.info("  Failures - Syntax Errors: %d (%.1f%%), Evaluation: %d (%.1f%%), Timeouts: %d (%.1f%%), Patches: %d (%.1f%%), Secondary Patches (while fixing an error): %d (%.1f%%), Invalid Responses: %d (%.1f%%)",
+                        stats["syntax_errors"], stats["syntax_errors"]/stats["total_individuals"]*100,
                         stats["evaluation_failures"], stats["evaluation_failures"]/stats["total_individuals"]*100,
                         stats["timeouts"], stats["timeouts"]/stats["total_individuals"]*100,
-                        stats["patch_failures"], stats["patch_failures"]/stats["total_individuals"]*100)
+                        stats["patch_failures"], stats["patch_failures"]/stats["total_individuals"]*100,
+                        stats["secondary_patch_failures"], stats["secondary_patch_failures"]/stats["total_individuals"]*100,
+                        stats["invalid_response_failures"], stats["invalid_response_failures"]/stats["total_individuals"]*100)
         self.logger.info("=" * 60)
 
     def _run_single_generation(self) -> int:
@@ -149,7 +160,13 @@ class EvolutionController:
                         
                         if result_dict is not None:
                             # Add to database
-                            pid = self.database.add(result_dict["program"], result_dict["score"], self.current_gen, result_dict["parent_id"])
+                            pid = self.database.add(
+                                result_dict["program"],
+                                result_dict["explanation"],
+                                result_dict["score"], 
+                                self.current_gen, 
+                                result_dict["parent_id"]                                
+                            )
                             successful_individuals += 1
                             generation_results.append({
                                 "success": True,

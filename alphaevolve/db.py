@@ -31,6 +31,7 @@ class EvolutionaryDatabase:
             CREATE TABLE IF NOT EXISTS programs (
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
                 code TEXT NOT NULL,
+                explanation TEXT NOT NULL,
                 score REAL NOT NULL,
                 gen  INTEGER NOT NULL,
                 parent_id INTEGER,
@@ -56,7 +57,7 @@ class EvolutionaryDatabase:
         )
         return cur.execute("SELECT id FROM experiments WHERE label = ?", (label,)).fetchone()[0]
 
-    def add(self, code: str, score: float, gen: int, parent_id: Optional[int]) -> int:
+    def add(self, code: str, explanation: str, score: float, gen: int, parent_id: Optional[int]) -> int:
         """
         Add a program to the database.
 
@@ -68,10 +69,10 @@ class EvolutionaryDatabase:
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO programs (code, score, gen, parent_id, experiment_id)
-            VALUES (?, ?, ?, ?, ?)
+            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id)
+            VALUES (?, ?, ?, ?, ?, ?)
             """,
-            (code, score, gen, parent_id, self.experiment_id),
+            (code, explanation, score, gen, parent_id, self.experiment_id),
         )
         lastrowid = cur.lastrowid
         if lastrowid is None:
