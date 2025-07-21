@@ -1,7 +1,8 @@
 import tempfile
 import logging
 from concurrent.futures import TimeoutError
-from typing import List, Tuple, Dict, Any
+from typing import List, Tuple
+from dataclasses import dataclass
 
 from .patcher import PatchApplier, PatchError
 from .prompts import PromptSampler
@@ -9,44 +10,79 @@ from .problem import Problem
 from .llm import OpenAIEngine
 from .config import Config
 from .response_parser import parse_structured_response
+from .db import ProgramRecord
 
-
-def generate_and_evaluate_with_retries(
-    parent_row: dict,
-    initial_code: str,
-    llm_instance: OpenAIEngine,
-    individual_id: int,
-    current_gen: int,
-    max_retries: int,
-    prompt_sampler: PromptSampler,
-    patcher: PatchApplier,
-    problem: Problem,
-    evaluation_timeout: float,
+@dataclass
+class ProgramGenerationContext:
+    """Context object containing all dependencies needed for program generation."""
+    llm_instance: OpenAIEngine
+    patcher: PatchApplier
+    problem: Problem
+    prompt_sampler: PromptSampler
+    max_retries: int
+    evaluation_timeout: float
     logger: logging.Logger
-) -> tuple[float | None, str, str | None]:
+
+
+def create_program_generation_context(cfg: Config, logger: logging.Logger) -> ProgramGenerationContext:
+    """Create a program generation context with all necessary dependencies."""
+    return ProgramGenerationContext(
+        llm_instance=OpenAIEngine(cfg.llm),
+        patcher=PatchApplier(),
+        problem=Problem(cfg.problem_entry, cfg.problem_eval),
+        prompt_sampler=PromptSampler(None),  # No database needed for prompt building
+        max_retries=cfg.evolution.max_retries,
+        evaluation_timeout=cfg.evolution.evaluation_timeout,
+        logger=logger
+    )
+
+
+def generate_program(
+    individual_id: int, 
+    parent_data: Tuple[dict, List[dict]], 
+    current_gen: int,
+    cfg: Config,
+    logger: logging.Logger
+) -> ProgramRecord:
     """
-    Generate a patch and evaluate it with retry logic for both patch application and evaluation failures.
+    Generate a single program for the population using pre-sampled data.
+    
+    This function is separated from the main controller to avoid SQLite connection 
+    pickling issues when using ProcessPoolExecutor. It contains all the logic needed
+    to generate and evaluate a single program in isolation.
     
     Returns:
-        Tuple of (score, final_program, failure_type)
-        - score: float | None - fitness score if successful, None if failed
-        - final_program: str - the final program code (parent code if failed)
-        - failure_type: str | None - type of failure if unsuccessful, None if successful
+        ProgramRecord object containing all generation results
     """
+    # Create program generation context for this individual to avoid sharing LLM instances
+    context = create_program_generation_context(cfg, logger)
+    
+    parent_row, inspiration_rows = parent_data
+    
+    # Initial prompt
+    prompt = context.prompt_sampler.build(parent_row, inspiration_rows)
+    initial_response = context.llm_instance.generate(prompt)
+    
+    # Parse initial response to get explanation and code
+    explanation, code_section = parse_structured_response(initial_response)
+    if explanation is None or code_section is None:
+        raise ValueError("Invalid initial response")
+    
+    # Generate and evaluate with retries
     retry_count = 0
     score = None
     error_message = "Unknown error"
     current_program = parent_row["code"]
     failure_type = None
-    code_section = initial_code
     
-    while retry_count <= max_retries:
+    # Main retry loop
+    while retry_count <= context.max_retries:
         if retry_count > 0:
-            retry_prompt = prompt_sampler.build_retry_prompt(
+            retry_prompt = context.prompt_sampler.build_retry_prompt(
                 current_program, error_message, failure_type or "unknown_error"
             )
             
-            response = llm_instance.generate(retry_prompt)
+            response = context.llm_instance.generate(retry_prompt)
             
             # Parse response to get new code
             _, code_section = parse_structured_response(response)
@@ -57,7 +93,7 @@ def generate_and_evaluate_with_retries(
         
         try:
             # Apply the patch
-            child_program = patcher.apply_diff(current_program, code_section)
+            child_program = context.patcher.apply_diff(current_program, code_section)
             # Compile the new program to check for syntax errors
             compile(child_program, "<candidate>", "exec")
             # If the program compiles, update the current program
@@ -68,7 +104,7 @@ def generate_and_evaluate_with_retries(
                 tmp.flush()
                 
                 # Run evaluation with timeout
-                score = problem.evaluate_with_timeout(tmp.name, evaluation_timeout)
+                score = context.problem.evaluate_with_timeout(tmp.name, context.evaluation_timeout)
                 
             # Success - exit retry loop
             failure_type = None
@@ -80,86 +116,40 @@ def generate_and_evaluate_with_retries(
             error_message = f"Syntax error: {str(e)}"
             failure_type = "syntax_error"
         except TimeoutError:
-            error_message = f"Evaluation timed out after {evaluation_timeout} seconds"
+            error_message = f"Evaluation timed out after {context.evaluation_timeout} seconds"
             failure_type = "timeout"
         except Exception as e:
             error_message = str(e)
             failure_type = "runtime_error"
         
         retry_count += 1
-        if retry_count <= max_retries:
-            logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
-                        current_gen, individual_id, failure_type, retry_count, max_retries, error_message)
+        if retry_count <= context.max_retries:
+            context.logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
+                        current_gen, individual_id, failure_type, retry_count, context.max_retries, error_message)
         else:
-            logger.debug("Gen %d, Individual %d: %s, ran out of retries: %s", 
+            context.logger.debug("Gen %d, Individual %d: %s, ran out of retries: %s", 
                         current_gen, individual_id, failure_type, error_message)
     
-    return score, current_program, failure_type
-
-
-def generate_program(
-    individual_id: int, 
-    parent_data: Tuple[dict, List[dict]], 
-    current_gen: int,
-    cfg: Config,
-    logger: logging.Logger
-) -> Dict[str, Any]:
-    """
-    Generate a single program for the population using pre-sampled data.
-    
-    This function is separated from the main controller to avoid SQLite connection 
-    pickling issues when using ProcessPoolExecutor. It contains all the logic needed
-    to generate and evaluate a single program in isolation.
-    
-    Returns:
-        Dict:
-        - score: float | None - fitness score if successful, None if failed
-        - program: str - the program code (parent code if failed)
-        - explanation: str - LLM's explanation of changes (empty if failed)
-        - parent_id: int - ID of the parent program
-        - failure_type: str | None - type of failure if unsuccessful, None if successful
-    """
-    parent_row, inspiration_rows = parent_data
-    
-    # Create instances for this program to avoid conflicts
-    llm_instance = OpenAIEngine(cfg.llm)
-    patcher = PatchApplier()
-    problem = Problem(cfg.problem_entry, cfg.problem_eval)
-    prompt_sampler = PromptSampler(None)  # No database needed for prompt building
-    
-    # Initial prompt
-    prompt = prompt_sampler.build(parent_row, inspiration_rows)
-    initial_response = llm_instance.generate(prompt)
-    
-    # Parse initial response to get explanation and code
-    explanation, code_section = parse_structured_response(initial_response)
-    if explanation is None or code_section is None:
-        raise ValueError("Invalid initial response")
-    
-    # Generate and evaluate with retries
-    score, final_program, failure_type = generate_and_evaluate_with_retries(
-        parent_row, code_section, llm_instance, individual_id, current_gen,
-        cfg.evolution.max_retries, prompt_sampler, patcher, problem,
-        cfg.evolution.evaluation_timeout, logger
-    )
-    
+    # If the program failed to generate a valid score, return a ProgramRecord with the failure type
     if score is None:
-        logger.debug("Gen %d, Individual %d: generation failed (%s), skipping", 
+        context.logger.debug("Gen %d, Individual %d: generation failed (%s), skipping", 
                     current_gen, individual_id, failure_type or "unknown")
-        return {
-            "score": None,
-            "explanation": explanation,
-            "program": final_program,
-            "parent_id": parent_row["id"],
-            "failure_type": failure_type or "generation_failure"
-        }
+        return ProgramRecord(
+            code=current_program,
+            explanation=explanation,
+            score=None,
+            gen=current_gen,
+            parent_id=parent_row["id"],
+            failure_type=failure_type or "generation_failure"
+        )
 
-    # Success
-    logger.debug("Gen %d, Individual %d: new score %.3f", current_gen, individual_id, score)
-    return {
-        "score": score,
-        "program": final_program,
-        "explanation": explanation,
-        "parent_id": parent_row["id"],
-        "failure_type": None
-    }
+    # Success - return a ProgramRecord with the score
+    context.logger.debug("Gen %d, Individual %d: new score %.3f", current_gen, individual_id, score)
+    return ProgramRecord(
+        code=current_program,
+        explanation=explanation,
+        score=score,
+        gen=current_gen,
+        parent_id=parent_row["id"],
+        failure_type=None
+    )

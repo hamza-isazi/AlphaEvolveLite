@@ -1,8 +1,30 @@
 import sqlite3
 import random
 from typing import List, Tuple, Optional
+from dataclasses import dataclass
 from .config import Config
 import math
+
+
+@dataclass
+class ProgramRecord:
+    """Represents a program record in the database."""
+    code: str
+    explanation: str
+    score: Optional[float]
+    gen: int
+    parent_id: Optional[int]
+    failure_type: Optional[str] = None
+    id: Optional[int] = None
+    experiment_id: Optional[int] = None
+    
+    def to_insert_tuple(self, experiment_id: int) -> Tuple:
+        """Convert to tuple for database insertion."""
+        return (
+            self.code, self.explanation, self.score, self.gen, 
+            self.parent_id, experiment_id, self.failure_type
+        )
+
 
 class EvolutionaryDatabase:
     def __init__(self, cfg: Config) -> None:
@@ -58,24 +80,14 @@ class EvolutionaryDatabase:
         )
         return cur.execute("SELECT id FROM experiments WHERE label = ?", (label,)).fetchone()[0]
 
-    def add(self, code: str, explanation: str, score: Optional[float], gen: int, parent_id: Optional[int], failure_type: Optional[str] = None) -> int:
+    def add(self, record: ProgramRecord) -> int:
         """
         Add a program to the database.
 
         Parameters
         ----------
-        code : str
-            The program code
-        explanation : str
-            Explanation of the changes made
-        score : Optional[float]
-            The evaluation score (None for failed programs)
-        gen : int
-            Generation number
-        parent_id : Optional[int]
-            ID of the parent program
-        failure_type : Optional[str]
-            Type of failure if the program failed (e.g., "syntax_error", "timeout", etc.)
+        record : ProgramRecord
+            The program record to add
 
         Returns
         -------
@@ -88,7 +100,7 @@ class EvolutionaryDatabase:
             INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type)
             VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (code, explanation, score, gen, parent_id, self.experiment_id, failure_type),
+            record.to_insert_tuple(self.experiment_id),
         )
         lastrowid = cur.lastrowid
         if lastrowid is None:
