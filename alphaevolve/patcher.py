@@ -5,16 +5,42 @@ _DIFF_RE = re.compile(
     r"<<{4,}\s*SEARCH\s*\n(.*?)\n={4,}\s*\n(.*?)\n>{4,}\s*REPLACE",
     re.DOTALL,
 )
-_FULL_FILE_RE = re.compile(
-    r"###\s*Full\s*File\s*Replacement\s*\n(.*)",
-    re.DOTALL,
-)
 _EVOLVE_RE = re.compile(
     r"#\s*EVOLVE-BLOCK-START(.*?)#\s*EVOLVE-BLOCK-END",
     re.DOTALL,
 )
+_CODE_BLOCK_RE = re.compile(
+    r"```(?:[a-zA-Z0-9_+.-]*)\n(.*?)\n```",
+    re.DOTALL,
+)
 
 class PatchApplier:
+    @staticmethod
+    def _extract_code_from_markdown(text: str) -> str:
+        """
+        Extract code from markdown code blocks, handling various formats.
+        
+        This method properly handles code blocks that may have:
+        - Opening ``` with optional language identifier
+        - Closing ``` that may be followed by additional text
+        - Multiple code blocks (takes the first complete one)
+        
+        Args:
+            text: Text that may contain markdown code blocks
+            
+        Returns:
+            The extracted code without markdown formatting
+        """
+        # Look for code block pattern: ```[language]?\n...\n```
+        # The closing ``` should be followed by a newline or end of string
+        match = _CODE_BLOCK_RE.search(text)
+        
+        if match:
+            return match.group(1)
+        
+        # If no proper code block found, return the original text
+        return text
+
     @staticmethod
     def _remove_right_whitespace(text: str) -> str:
         """
@@ -134,23 +160,15 @@ class PatchApplier:
         source = PatchApplier._remove_right_whitespace(source)
         diff_text = PatchApplier._remove_right_whitespace(diff_text)
         
-        # Check for full file replacement first
-        full_file_match = _FULL_FILE_RE.search(diff_text)
-        if full_file_match:
-            new_code = full_file_match.group(1).strip()
-            # Remove markdown code block markers if present
-            if new_code.startswith('```'):
-                lines = new_code.split('\n')
-                if len(lines) > 2:
-                    new_code = '\n'.join(lines[1:-1])
-            # Also remove any trailing ``` that might be left
-            new_code = new_code.rstrip('`')
-            return new_code
+        diffs = _DIFF_RE.findall(diff_text)
+        # If no diffs (SEARCH/REPLACE blocks) are present, use full file replacement
+        if not diffs:
+            return PatchApplier._extract_code_from_markdown(source)
         
         # Handle SEARCH/REPLACE format
         regions = PatchApplier._evolve_regions(source)
         new = source
-        for search, replace in _DIFF_RE.findall(diff_text):            
+        for search, replace in diffs:            
             # Determine if the LLM is using relative indentation by checking if the first line is indented
             # If it is, we need to preserve the relative indentation structure of the replacement lines
             # while applying base indentation.

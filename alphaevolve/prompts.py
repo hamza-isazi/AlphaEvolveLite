@@ -30,41 +30,43 @@ TEMPLATE = """\
     Your response MUST follow this exact structure:
 
     ### Explanation
-    [Provide a detailed explanation of your proposed changes, reasoning, and expected improvements]
+    [Provide a short explanation of your proposed changes, reasoning, and expected improvements]
 
     ### Code
     [Provide your code changes using one of the following formats]
     *Do not explain changes inside the code section.*
 
-    ## Option 1: Targeted Improvements (SEARCH/REPLACE format)
+    ## Option 1: Major Structural Changes (Full File Replacement)
+    If the changes require major structural modifications, output a complete file wrapped in a Markdown code block:
+    ```[language]
+    [Complete file content here]
+    ```
+
+    ## Option 2: Targeted Improvements (SEARCH/REPLACE format)
     If making targeted improvements, output code changes using the SEARCH/REPLACE format:
     ```
     <<<<<<< SEARCH
-    # original lines (one or more consecutive lines)
+    # original lines
     =======
-    # replacement lines (same number of lines or valid replacement)
+    # replacement lines
     >>>>>>> REPLACE
-    ```
 
-    ## Option 2: Major Structural Changes (Full File Replacement)
-    If the changes require major structural modifications, output a complete file wrapped in a Markdown code block:
-    ```[language]
-    ### Full File Replacement
-    [Complete file content here]
+    <<<<<<< SEARCH
+    # other set of original lines
+    =======
+    # other set of replacement lines
+    >>>>>>> REPLACE
     ```
 
     If using the SEARCH/REPLACE format, please follow these rules:
     ### SEARCH/REPLACE block rules
     {evolve_instructions}
     - You can suggest multiple changes, they will be applied in order.
-    - Emit *each* independent modification as its own complete block.
-    - Do **not** nest multiple SEARCH/REPLACE blocks together—each change must start with `<<<<<<< SEARCH` and end with `>>>>>>> REPLACE`.
+    - Emit *each* independent modification as its own complete SEARCH/REPLACE block, each change must start with `<<<<<<< SEARCH` and end with `>>>>>>> REPLACE`.
     - Each SEARCH section must match the code EXACTLY, including all whitespace, indentation, and newlines.
     - SEARCH/REPLACE blocks must NOT overlap - each must target different, non-overlapping code sections.
-    - Make sure that the changes you propose are consistent with each
-    other. For example, if you refer to a new config variable
-    somewhere, you should also propose a change to add that
-    variable.
+    - Make sure that the changes you propose are consistent with each other. For example, if you refer to a new config variable
+        somewhere, you should also propose a change to add that variable.
 """
 
 PATCH_RETRY_TEMPLATE = """\

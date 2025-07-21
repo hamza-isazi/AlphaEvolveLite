@@ -5,11 +5,12 @@ Test script to verify indentation flexibility in diff application.
 
 import sys
 from pathlib import Path
+import unittest
+from alphaevolve.patcher import PatchApplier
 
 # Add the parent directory to the path so we can import alphaevolve
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from alphaevolve.patcher import PatchApplier
 
 def run_diff_test_case(name, original_code, diff, expected):
     """Helper to run a diff test case and check indentation and correctness."""
@@ -43,26 +44,28 @@ def test_indentation_cases():
     """Test the patching with various indentation cases both in the original code and in the diff text.
     We want the patcher to work both when the LLM uses the absolute indentation from the source code and
     when it uses a relative indentation, meaning the diff text has a base indentation level of 0."""
-    original_code = """    try:
-        # Create a StringIO object for input
-        input_buffer = StringIO(input_text)
-        
-        def readints():
-            return list(map(int, input_buffer.readline().split()))
+    original_code = """try:
+    # Create a StringIO object for input
+    input_buffer = StringIO(input_text)
+    
+    def readints():
+        return list(map(int, input_buffer.readline().split()))
 
-        B, L, D = readints()
-        scores = readints()
-        from heapq import heappush, heappop
+    B, L, D = readints()
+    scores = readints()
+    from heapq import heappush, heappop
 
-        libraries = []
-        for idx in range(L):
-            N, T, M = readints()
-            books = readints()
-            total_book_score = sum(scores[b] for b in books)
-            libraries.append((T, M, total_book_score, books, idx))
+    libraries = []
+    for idx in range(L):
+        N, T, M = readints()
+        books = readints()
+        total_book_score = sum(scores[b] for b in books)
+        libraries.append((T, M, total_book_score, books, idx))
 
-        # Prioritize libraries based on a heuristic score
-        libraries.sort(key=lambda lib: (lib[0], -lib[2] / lib[0], -lib[1]))"""
+    # Prioritize libraries based on a heuristic score
+    libraries.sort(key=lambda lib: (lib[0], -lib[2] / lib[0], -lib[1]))
+except Exception:
+    pass"""
     diff = """<<<<<< SEARCH
 libraries.append((T, M, total_book_score, books, idx))
 =======
@@ -71,29 +74,31 @@ libraries.append((T, M, total_book_score, books_with_scores, idx))
 if(True):
     print("hello")
 >>>>>>> REPLACE"""
-    expected = """    try:
-        # Create a StringIO object for input
-        input_buffer = StringIO(input_text)
+    expected = """try:
+    # Create a StringIO object for input
+    input_buffer = StringIO(input_text)
 
-        def readints():
-            return list(map(int, input_buffer.readline().split()))
+    def readints():
+        return list(map(int, input_buffer.readline().split()))
 
-        B, L, D = readints()
-        scores = readints()
-        from heapq import heappush, heappop
+    B, L, D = readints()
+    scores = readints()
+    from heapq import heappush, heappop
 
-        libraries = []
-        for idx in range(L):
-            N, T, M = readints()
-            books = readints()
-            total_book_score = sum(scores[b] for b in books)
-            books_with_scores = [(b, scores[b]) for b in books]
-            libraries.append((T, M, total_book_score, books_with_scores, idx))
-            if(True):
-                print("hello")
+    libraries = []
+    for idx in range(L):
+        N, T, M = readints()
+        books = readints()
+        total_book_score = sum(scores[b] for b in books)
+        books_with_scores = [(b, scores[b]) for b in books]
+        libraries.append((T, M, total_book_score, books_with_scores, idx))
+        if(True):
+            print("hello")
 
-        # Prioritize libraries based on a heuristic score
-        libraries.sort(key=lambda lib: (lib[0], -lib[2] / lib[0], -lib[1]))"""
+    # Prioritize libraries based on a heuristic score
+    libraries.sort(key=lambda lib: (lib[0], -lib[2] / lib[0], -lib[1]))
+except Exception:
+    pass"""
         
     if run_diff_test_case("relative indentation in diff", original_code, diff, expected) == False:
         return False
@@ -176,11 +181,53 @@ if(True):
 
     return True
 
+class TestPatchApplier(unittest.TestCase):
+    
+    def test_extract_code_from_markdown(self):
+        """Test code extraction from markdown code blocks with various formats."""
+        
+        # Test basic code block
+        text1 = "```python\ndef hello():\n    print('Hello')\n```"
+        result1 = PatchApplier._extract_code_from_markdown(text1)
+        expected1 = "def hello():\n    print('Hello')"
+        self.assertEqual(result1, expected1)
+        
+        # Test code block with text after closing backticks
+        text2 = "```python\ndef hello():\n    print('Hello')\n```\n\nThis complete file replacement introduces a more effective approach."
+        result2 = PatchApplier._extract_code_from_markdown(text2)
+        expected2 = "def hello():\n    print('Hello')"
+        self.assertEqual(result2, expected2)
+        
+        # Test code block without language identifier
+        text3 = "```\ndef hello():\n    print('Hello')\n```"
+        result3 = PatchApplier._extract_code_from_markdown(text3)
+        expected3 = "def hello():\n    print('Hello')"
+        self.assertEqual(result3, expected3)
+        
+        # Test text without code blocks (should return original)
+        text4 = "This is just regular text without code blocks"
+        result4 = PatchApplier._extract_code_from_markdown(text4)
+        self.assertEqual(result4, text4)
+        
+        # Test code block with complex language identifier
+        text5 = "```python3.9\nimport sys\nprint(sys.version)\n```"
+        result5 = PatchApplier._extract_code_from_markdown(text5)
+        expected5 = "import sys\nprint(sys.version)"
+        self.assertEqual(result5, expected5)
+
+        # Test code block with last backticks on the same line
+        text6 = "```python\ndef hello():\n    print('Hello')```"
+        result6 = PatchApplier._extract_code_from_markdown(text6)
+        expected6 = "def hello():\n    print('Hello')"
+        self.assertEqual(result6, expected6)
+
 if __name__ == "__main__":
     print("Running indentation flexibility tests...")
     
     success = True
     success &= test_indentation_cases()
+    test_patcher = TestPatchApplier()
+    test_patcher.test_extract_code_from_markdown()
     
     if success:
         print("\n🎉 All tests passed! The indentation flexibility fix is working correctly.")
