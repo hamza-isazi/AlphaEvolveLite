@@ -269,5 +269,7 @@ def main():
     create_visualization(programs, experiment['label'], args.output)
 
 
+# Example usage:
+# python scripts/visualize_experiment.py -e book-scanning --config examples/book_scanning/config.yml
 if __name__ == "__main__":
     main() 

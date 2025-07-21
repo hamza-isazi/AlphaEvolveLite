@@ -69,28 +69,14 @@ TEMPLATE = """\
         somewhere, you should also propose a change to add that variable.
 """
 
-PATCH_RETRY_TEMPLATE = """\
-The previous diffs you provided could not be applied successfully. This usually happens when:
-
-1. Full File Replacement was not formatted correctly
-2. The SEARCH section doesn't match the code exactly
-3. Your diffs conflict with each other
-{evolve_instructions}
-
-Please fix your diff by ensuring the SEARCH section matches the code exactly and the REPLACE section is valid. Here's the current code again for reference:
-
-{parent}
-
-Please provide corrected code changes using SEARCH/REPLACE or Full File Replacement format:"""
-
-EVAL_RETRY_TEMPLATE = """\
-The previous diff was applied successfully, but the resulting program failed during evaluation with the following error:
+RETRY_TEMPLATE = """\
+The previous attempt failed with the following error:
 
 {error_message}
 
-This indicates a logical, runtime, or requirements-related issue.
+This indicates a {failure_type} issue that needs to be fixed.
 
-Below is the current version of the code (after the previous diff was applied):
+Below is the current version of the code that needs to be corrected:
 
 {current_code}
 
@@ -106,10 +92,6 @@ EVOLVE_INSTRUCTIONS = """\
 
 FREE_INSTRUCTIONS = """\
     - You can modify any part of the code as needed."""
-
-EVOLVE_RETRY_INSTRUCTIONS = """\
-    4. The SEARCH section targets code outside the allowed EVOLVE blocks
-"""
 
 class PromptSampler:
     """Builds a single prompt each generation."""
@@ -142,19 +124,10 @@ class PromptSampler:
         )
         return prompt
 
-    def build_patch_retry_prompt(self, parent_row: dict) -> str:
-        """Build a retry prompt for patch application failures."""
-        # Add evolve patch-retry instructions if evolve blocks are present
-        evolve_instructions = EVOLVE_RETRY_INSTRUCTIONS if self._has_evolve_blocks(parent_row['code']) else ""
-        
-        return PATCH_RETRY_TEMPLATE.format(
-            parent=self._format_rows([parent_row]),
-            evolve_instructions=evolve_instructions
-        )
-
-    def build_eval_retry_prompt(self, current_code: str, error_message: str) -> str:
-        """Build a retry prompt for evaluation failures."""
-        return EVAL_RETRY_TEMPLATE.format(
+    def build_retry_prompt(self, current_code: str, error_message: str, failure_type: str) -> str:
+        """Build a unified retry prompt for both patch and evaluation failures."""        
+        return RETRY_TEMPLATE.format(
             current_code=f"```\n{current_code}\n```",
-            error_message=error_message
+            error_message=error_message,
+            failure_type=failure_type
         )

@@ -14,6 +14,10 @@ _CODE_BLOCK_RE = re.compile(
     re.DOTALL,
 )
 
+class PatchError(Exception):
+    """Exception raised when patch application fails."""
+    pass
+
 class PatchApplier:
     @staticmethod
     def _extract_code_from_markdown(text: str) -> str:
@@ -155,7 +159,7 @@ class PatchApplier:
         return None
 
     @staticmethod
-    def apply_diff(source: str, diff_text: str) -> Optional[str]:
+    def apply_diff(source: str, diff_text: str) -> str:
         # Sanitize inputs by removing trailing whitespace while preserving indentation
         source = PatchApplier._remove_right_whitespace(source)
         diff_text = PatchApplier._remove_right_whitespace(diff_text)
@@ -163,7 +167,7 @@ class PatchApplier:
         diffs = _DIFF_RE.findall(diff_text)
         # If no diffs (SEARCH/REPLACE blocks) are present, use full file replacement
         if not diffs:
-            return PatchApplier._extract_code_from_markdown(source)
+            return PatchApplier._extract_code_from_markdown(diff_text)
         
         # Handle SEARCH/REPLACE format
         regions = PatchApplier._evolve_regions(source)
@@ -180,14 +184,14 @@ class PatchApplier:
                 # Flexible indentation matching
                 match_result = PatchApplier._find_with_indentation_flexibility(new, search)
                 if match_result is None:
-                    return None  # SEARCH chunk not found
+                    raise PatchError(f"SEARCH chunk not found in source code. Search text: {repr(search[:100])}...")
                 start_pos, end_pos, original_matched = match_result
 
                 # If evolve regions are present, verify that the match lies wholly inside one evolve region
                 if regions:
                     in_block = any(start <= start_pos < end for start, end in regions)
                     if not in_block:
-                        return None  # attempted edit outside allowed span
+                        raise PatchError(f"Attempted edit outside allowed evolve block. Edit position: {start_pos}, evolve regions: {regions}")
 
                 # Preserve relative indentation structure in replacement
                 replace = PatchApplier._preserve_relative_indentation(original_matched, replace)
@@ -196,7 +200,7 @@ class PatchApplier:
                 # Exact find/replace (no indentation logic)
                 idx = new.find(search)
                 if idx == -1:
-                    return None  # SEARCH chunk not found
+                    raise PatchError(f"SEARCH chunk not found in source code. Search text: {repr(search[:100])}...")
                 start_pos = idx
                 end_pos = idx + len(search)
 
@@ -204,10 +208,10 @@ class PatchApplier:
                 if regions:
                     in_block = any(start <= start_pos < end for start, end in regions)
                     if not in_block:
-                        return None  # attempted edit outside allowed span
+                        raise PatchError(f"Attempted edit outside allowed evolve block. Edit position: {start_pos}, evolve regions: {regions}")
 
                 new = new[:start_pos] + replace + new[end_pos:]
 
         if new == source:
-            return None
+            raise PatchError("No changes were made to the source code")
         return new

@@ -11,7 +11,7 @@ from .problem import Problem
 from .db import EvolutionaryDatabase
 from .config import Config
 from .llm import OpenAIEngine
-from .individual_generator import generate_single_individual
+from .program_generator import generate_program
 
 
 class EvolutionController:
@@ -58,7 +58,6 @@ class EvolutionController:
                 "evaluation_failures": 0,
                 "timeouts": 0,
                 "patch_failures": 0,
-                "secondary_patch_failures": 0,
                 "invalid_response_failures": 0
             }
         
@@ -75,7 +74,6 @@ class EvolutionController:
         evaluation_failures = sum(1 for r in failed_results if r["failure_type"] == "runtime_error")
         timeouts = sum(1 for r in failed_results if r["failure_type"] == "timeout")
         patch_failures = sum(1 for r in failed_results if r["failure_type"] == "patch_failure")
-        secondary_patch_failures = sum(1 for r in failed_results if r["failure_type"] == "secondary_patch_failure")
         invalid_response_failures = sum(1 for r in failed_results if r["failure_type"] == "invalid_response")
 
         return {
@@ -88,7 +86,6 @@ class EvolutionController:
             "evaluation_failures": evaluation_failures,
             "timeouts": timeouts,
             "patch_failures": patch_failures,
-            "secondary_patch_failures": secondary_patch_failures,
             "invalid_response_failures": invalid_response_failures
         }
 
@@ -108,12 +105,11 @@ class EvolutionController:
         self.logger.info("  Success Rate: %d/%d (%.1f%%)", 
                         stats["successful_individuals"], stats["total_individuals"], stats["success_rate"])
         self.logger.info("  Fitness - Avg: %.3f, Best: %.3f", stats["avg_fitness"], stats["best_fitness"])
-        self.logger.info("  Failures - Syntax Errors: %d (%.1f%%), Evaluation: %d (%.1f%%), Timeouts: %d (%.1f%%), Patches: %d (%.1f%%), Secondary Patches (while fixing an error): %d (%.1f%%), Invalid Responses: %d (%.1f%%)",
+        self.logger.info("  Failures - Syntax Errors: %d (%.1f%%), Evaluation: %d (%.1f%%), Timeouts: %d (%.1f%%), Patches: %d (%.1f%%), Invalid Responses: %d (%.1f%%)",
                         stats["syntax_errors"], stats["syntax_errors"]/stats["total_individuals"]*100,
                         stats["evaluation_failures"], stats["evaluation_failures"]/stats["total_individuals"]*100,
                         stats["timeouts"], stats["timeouts"]/stats["total_individuals"]*100,
                         stats["patch_failures"], stats["patch_failures"]/stats["total_individuals"]*100,
-                        stats["secondary_patch_failures"], stats["secondary_patch_failures"]/stats["total_individuals"]*100,
                         stats["invalid_response_failures"], stats["invalid_response_failures"]/stats["total_individuals"]*100)
         self.logger.info("=" * 60)
 
@@ -138,14 +134,14 @@ class EvolutionController:
                 # This is a fundamental error - no parents available means evolution cannot continue
                 raise RuntimeError(f"Gen {self.current_gen}: No parents available for evolution. Database may be empty or corrupted.")
         
-        # Generate individuals in parallel with progress bar
+        # Generate programs in parallel with progress bar
         generation_results = []
         successful_individuals = 0
         
         with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 80)) as executor:
-            # Submit all individual generation tasks with pre-sampled data
+            # Submit all program generation tasks with pre-sampled data
             future_to_id = {
-                executor.submit(generate_single_individual, i, parent_data, self.current_gen, self.cfg, get_logger()): i 
+                executor.submit(generate_program, i, parent_data, self.current_gen, self.cfg, get_logger()): i 
                 for i, parent_data in enumerate(parent_inspiration_pairs)
             }
             
