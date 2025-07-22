@@ -80,6 +80,28 @@ The system provides two logging modes:
 | `individual_generator.*`         | Process-safe individual generation pipeline for parallel execution.                                               |
 | `config.Config` & `log.*`        | YAML → dataclass; structured logging to console/file.                                                             |
 
+## LLM Providers
+
+AlphaEvolveLite supports multiple LLM providers through the `provider` field in the configuration:
+
+### OpenAI
+```yaml
+llm:
+  provider: openai
+  model: gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
+```
+**Environment Variable**: `OPENAI_API_KEY`
+
+### Google Gemini
+```yaml
+llm:
+  provider: gemini
+  model: gemini-1.5-flash  # or gemini-1.5-pro, gemini-1.0-pro, etc.
+```
+**Environment Variable**: `GOOGLE_API_KEY`
+
+The Gemini integration uses the OpenAI-compatible API format provided by Google, making it seamless to switch between providers.
+
 ## Configuration Snippet
 
 ```yaml

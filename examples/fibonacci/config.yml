@@ -6,8 +6,10 @@ experiment:
   save_top_k: 5               # number of top programs to save one completion of the experiment
 
 llm:
-  provider: openai
-  model: gpt-4o-mini          # or any model your key can access
+  # provider: openai
+  # model: gpt-4o-mini          # or any model your key can access
+  provider: gemini
+  model: gemini-1.5-flash     # or gemini-1.5-pro, gemini-1.0-pro, etc.
 
 evolution:
   population_size: 20

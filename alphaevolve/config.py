@@ -92,8 +92,8 @@ class ConfigContext:
     def llm(self):
         """Lazy initialization of LLM engine."""
         if self._llm is None:
-            from .llm import OpenAIEngine
-            self._llm = OpenAIEngine(self.cfg.llm)
+            from .llm import create_llm_engine
+            self._llm = create_llm_engine(self.cfg.llm)
         return self._llm
     
     @property

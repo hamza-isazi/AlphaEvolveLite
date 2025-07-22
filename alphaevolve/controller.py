@@ -103,7 +103,7 @@ class EvolutionController:
         program_records = []
         successful_individuals = 0
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 80)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 20)) as executor:
             # Submit all program generation tasks with pre-sampled data
             # Each worker will create its own program generation context to avoid sharing LLM instances
             future_to_id = {
