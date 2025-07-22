@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from .patcher import PatchApplier, PatchError
 from .prompts import PromptSampler
 from .problem import Problem
-from .llm import OpenAIEngine
+from .llm import LLMEngine, create_llm_engine
 from .config import Config
 from .response_parser import parse_structured_response
 from .db import ProgramRecord
@@ -15,7 +15,7 @@ from .db import ProgramRecord
 @dataclass
 class ProgramGenerationContext:
     """Context object containing all dependencies needed for program generation."""
-    llm_instance: OpenAIEngine
+    llm_instance: LLMEngine
     patcher: PatchApplier
     problem: Problem
     prompt_sampler: PromptSampler
@@ -27,7 +27,7 @@ class ProgramGenerationContext:
 def create_program_generation_context(cfg: Config, logger: logging.Logger) -> ProgramGenerationContext:
     """Create a program generation context with all necessary dependencies."""
     return ProgramGenerationContext(
-        llm_instance=OpenAIEngine(cfg.llm),
+        llm_instance=create_llm_engine(cfg.llm),
         patcher=PatchApplier(),
         problem=Problem(cfg.problem_entry, cfg.problem_eval),
         prompt_sampler=PromptSampler(None),  # No database needed for prompt building
