@@ -37,7 +37,8 @@ class EvolutionController:
             retry_count=0,
             total_evaluation_time=seed_execution_time,
             generation_time=0.0,  # Seed doesn't go through generation process
-            total_llm_time=0.0  # Seed doesn't use LLM
+            total_llm_time=0.0,  # Seed doesn't use LLM
+            total_tokens=0  # Seed doesn't use LLM
         )
         self.context.database.add(seed_record)
         self.logger.info("Seed score %.3f", seed_score)
@@ -72,6 +73,10 @@ class EvolutionController:
         total_llm_times = [r.total_llm_time for r in program_records if r.total_llm_time is not None]
         avg_total_llm_time = statistics.mean(total_llm_times) if total_llm_times else 0.0
         
+        # Calculate total token statistics
+        total_tokens_list = [r.total_tokens for r in program_records if r.total_tokens is not None]
+        avg_total_tokens = statistics.mean(total_tokens_list) if total_tokens_list else 0.0
+        
         # Count different types of failures
         syntax_errors = sum(1 for r in failed_records if r.failure_type == "syntax_error")
         evaluation_failures = sum(1 for r in failed_records if r.failure_type == "runtime_error")
@@ -88,8 +93,8 @@ class EvolutionController:
         self.logger.info("  Success Rate: %d/%d (%.1f%%)", 
                         successful_individuals, total_individuals, success_rate)
         self.logger.info("  Fitness - Avg: %.3f, Best: %.3f", avg_fitness, best_fitness)
-        self.logger.info("  Performance - Avg Retries: %.1f, Avg Total Eval Time: %.2fs, Avg Gen Time: %.2fs, Avg Total LLM Time: %.2fs", 
-                        avg_retries, avg_total_evaluation_time, avg_generation_time, avg_total_llm_time)
+        self.logger.info("  Performance - Avg Retries: %.1f, Avg Total Eval Time: %.2fs, Avg Gen Time: %.2fs, Avg Total LLM Time: %.2fs, Avg Total Tokens: %.0f", 
+                        avg_retries, avg_total_evaluation_time, avg_generation_time, avg_total_llm_time, avg_total_tokens)
         self.logger.info("  Failures - Syntax Errors: %d (%.1f%%), Evaluation: %d (%.1f%%), Timeouts: %d (%.1f%%), Patches: %d (%.1f%%), Invalid Responses: %d (%.1f%%)",
                         syntax_errors, syntax_errors/total_individuals*100,
                         evaluation_failures, evaluation_failures/total_individuals*100,

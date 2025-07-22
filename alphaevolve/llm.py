@@ -7,7 +7,7 @@ from openai.types.chat import ChatCompletionMessageParam
 from .config import LLMCfg
 
 class LLMEngine(Protocol):
-    def generate(self, prompt: str) -> Tuple[str, float]: ...
+    def generate(self, prompt: str) -> Tuple[str, float, int]: ...
     def add_message(self, role: str, content: str) -> None: ...
     def reset_conversation(self) -> None: ...
 
@@ -43,7 +43,7 @@ class BaseLLMEngine:
         """Reset the conversation history, keeping only the system prompt."""
         self.messages = [cast(ChatCompletionMessageParam, {"role": "system", "content": self.system_prompt})]
 
-    def generate(self, prompt: str) -> Tuple[str, float]:
+    def generate(self, prompt: str) -> Tuple[str, float, int]:
         # Add the user prompt to the conversation
         self.add_message("user", prompt)
         
@@ -58,11 +58,15 @@ class BaseLLMEngine:
         
         content = response.choices[0].message.content
         
+        # Extract token usage information
+        usage = response.usage
+        total_tokens = usage.total_tokens if usage else 0
+        
         # Add the assistant's response to the conversation
         if content:
             self.add_message("assistant", content)
         
-        return (content.strip() if content else "", response_time)
+        return (content.strip() if content else "", response_time, total_tokens)
 
 
 class OpenAIEngine(BaseLLMEngine):

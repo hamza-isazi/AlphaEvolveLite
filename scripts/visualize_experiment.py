@@ -47,7 +47,7 @@ def get_experiment_data(db_path: str, experiment_id: int) -> list:
     
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time
+        SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens
         FROM programs
         WHERE experiment_id = ?
         ORDER BY gen, score DESC
@@ -83,18 +83,11 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
             failure_types.add(p['failure_type'])
     failure_types = sorted(list(failure_types))
     
-    # Create figure with multiple subplots (2x3 layout since we're removing some time plots)
-    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2, 3, figsize=(18, 12))
-    fig.suptitle(f'Evolution Progress: {experiment_label}', fontsize=16, fontweight='bold')
+    # Create figure with multiple subplots (3x2 layout for 6 graphs)
+    fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(15, 18))
     
-    # 1. Score vs Generation (all points)
-    ax1.scatter(generations, scores, alpha=0.6, s=20, color='blue')
-    ax1.set_xlabel('Generation')
-    ax1.set_ylabel('Score')
-    ax1.set_title('All Programs: Score vs Generation')
-    ax1.grid(True, alpha=0.3)
-    
-    # 2. Best score per generation
+    # 1. Combined Score Analysis
+    # Group scores by generation
     gen_to_scores = {}
     for gen, score in zip(generations, scores):
         if gen not in gen_to_scores:
@@ -103,22 +96,25 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     
     best_gens = sorted(gen_to_scores.keys())
     best_scores = [max(gen_to_scores[gen]) for gen in best_gens]
-    
-    ax2.plot(best_gens, best_scores, 'o-', linewidth=2, markersize=6, color='red')
-    ax2.set_xlabel('Generation')
-    ax2.set_ylabel('Best Score')
-    ax2.set_title('Best Score per Generation')
-    ax2.grid(True, alpha=0.3)
-    
-    # 3. Average score per generation
     avg_scores = [np.mean(gen_to_scores[gen]) for gen in best_gens]
-    ax3.plot(best_gens, avg_scores, 'o-', linewidth=2, markersize=6, color='green')
-    ax3.set_xlabel('Generation')
-    ax3.set_ylabel('Average Score')
-    ax3.set_title('Average Score per Generation')
-    ax3.grid(True, alpha=0.3)
     
-    # 4. Success and Failure Rates per Generation
+    # Plot all scores as scatter
+    ax1.scatter(generations, scores, alpha=0.4, color='blue', label='All Scores')
+    
+    # Plot best scores line
+    ax1.plot(best_gens, best_scores, 'o-', color='red', label='Best Score')
+    
+    # Plot average scores line
+    ax1.plot(best_gens, avg_scores, 'o-', color='green', label='Average Score')
+    
+    ax1.set_xlabel('Generation')
+    ax1.set_ylabel('Score')
+    ax1.set_title('Score Evolution Analysis')
+    ax1.legend()
+    ax1.grid(True, alpha=0.3)
+    
+    # 2. Success and Failure Rates per Generation
+    
     # Group all programs by generation
     gen_to_programs = {}
     for p in programs:
@@ -138,7 +134,7 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
         success_rates.append(success_rate)
     
     # Plot success rate
-    ax4.plot(all_gens, success_rates, 'o-', linewidth=2, markersize=6, color='green', label='Success Rate')
+    ax2.plot(all_gens, success_rates, 'o-', linewidth=2, markersize=6, color='green', label='Success Rate')
     
     # Calculate and plot failure rates for each failure type
     colors = ['red', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
@@ -151,16 +147,16 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
             failure_rates.append(failure_rate)
         
         color = colors[i % len(colors)]
-        ax4.plot(all_gens, failure_rates, 'o-', linewidth=2, markersize=4, color=color, label=f'{failure_type}')
+        ax2.plot(all_gens, failure_rates, 'o-', linewidth=2, markersize=4, color=color, label=f'{failure_type}')
     
-    ax4.set_xlabel('Generation')
-    ax4.set_ylabel('Percentage (%)')
-    ax4.set_title('Success and Failure Rates per Generation')
-    ax4.grid(True, alpha=0.3)
-    ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
-    ax4.set_ylim(0, 100)
+    ax2.set_xlabel('Generation')
+    ax2.set_ylabel('Percentage (%)')
+    ax2.set_title('Success and Failure Rates per Generation')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
+    ax2.set_ylim(0, 100)
     
-    # 5. Average retry count per generation
+    # 3. Average retry count per generation
     retry_counts = [p['retry_count'] for p in programs]
     gen_to_retries = {}
     for gen, retries in zip(generations + [p['gen'] for p in failed_programs], retry_counts):
@@ -171,13 +167,32 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     all_retry_gens = sorted(gen_to_retries.keys())
     avg_retries = [np.mean(gen_to_retries[gen]) for gen in all_retry_gens]
     
-    ax5.plot(all_retry_gens, avg_retries, 'o-', linewidth=2, markersize=6, color='purple')
-    ax5.set_xlabel('Generation')
-    ax5.set_ylabel('Average Retry Count')
-    ax5.set_title('Average Retry Count per Generation')
-    ax5.grid(True, alpha=0.3)
+    ax3.plot(all_retry_gens, avg_retries, 'o-', linewidth=2, markersize=6, color='purple')
+    ax3.set_xlabel('Generation')
+    ax3.set_ylabel('Average Retry Count')
+    ax3.set_title('Average Retry Count per Generation')
+    ax3.grid(True, alpha=0.3)
     
-    # 6. Time breakdown comparison (stacked bar chart)
+    # 4. Average total tokens per generation
+    total_tokens_list = [p['total_tokens'] for p in programs if p['total_tokens'] is not None]
+    gen_to_tokens = {}
+    for p in programs:
+        if p['total_tokens'] is not None:
+            gen = p['gen']
+            if gen not in gen_to_tokens:
+                gen_to_tokens[gen] = []
+            gen_to_tokens[gen].append(p['total_tokens'])
+    
+    all_token_gens = sorted(gen_to_tokens.keys())
+    avg_tokens = [np.mean(gen_to_tokens[gen]) / 1000 for gen in all_token_gens]  # Convert to thousands
+    
+    ax4.plot(all_token_gens, avg_tokens, 'o-', linewidth=2, markersize=6, color='green')
+    ax4.set_xlabel('Generation')
+    ax4.set_ylabel('Average Total Tokens (thousands)')
+    ax4.set_title('Average Total Tokens per Generation')
+    ax4.grid(True, alpha=0.3)
+    
+    # 5. Time breakdown comparison (stacked bar chart)
     # Get all generations that have data for all time metrics
     generation_times = [p['generation_time'] for p in programs if p['generation_time'] is not None]
     total_evaluation_times = [p['total_evaluation_time'] for p in programs if p['total_evaluation_time'] is not None]
@@ -204,20 +219,36 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
         other_times = [gen_time - eval_time - llm_time for gen_time, eval_time, llm_time in zip(avg_gen_times, avg_eval_times, avg_llm_times)]
         
         x = range(len(all_gens))
-        ax6.bar(x, avg_eval_times, label='Total Evaluation Time', color='orange', alpha=0.7)
-        ax6.bar(x, avg_llm_times, bottom=avg_eval_times, label='Total LLM Time', color='purple', alpha=0.7)
-        ax6.bar(x, other_times, bottom=[e+l for e, l in zip(avg_eval_times, avg_llm_times)], label='Other Time', color='gray', alpha=0.7)
+        ax5.bar(x, avg_eval_times, label='Total Evaluation Time', color='orange', alpha=0.7)
+        ax5.bar(x, avg_llm_times, bottom=avg_eval_times, label='Total LLM Time', color='purple', alpha=0.7)
+        ax5.bar(x, other_times, bottom=[e+l for e, l in zip(avg_eval_times, avg_llm_times)], label='Other Time', color='gray', alpha=0.7)
         
-        ax6.set_xlabel('Generation')
-        ax6.set_ylabel('Time (s)')
-        ax6.set_title('Generation Time Breakdown')
+        ax5.set_xlabel('Generation')
+        ax5.set_ylabel('Time (s)')
+        ax5.set_title('Generation Time Breakdown')
+        ax5.legend()
+        ax5.grid(True, alpha=0.3)
+        ax5.set_xticks(x)
+        ax5.set_xticklabels(all_gens)
+    else:
+        ax5.text(0.5, 0.5, 'No complete time data\navailable', ha='center', va='center', transform=ax5.transAxes)
+        ax5.set_title('Generation Time Breakdown')
+    
+    # 6. Distribution of Total Generation Times
+    generation_times = [p['generation_time'] for p in programs if p['generation_time'] is not None]
+    
+    if generation_times:
+        ax6.hist(generation_times, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+        ax6.axvline(np.mean(generation_times), color='red', linestyle='--', linewidth=2, label=f'Mean: {np.mean(generation_times):.2f}s')
+        ax6.axvline(np.median(generation_times), color='orange', linestyle='--', linewidth=2, label=f'Median: {np.median(generation_times):.2f}s')
+        ax6.set_xlabel('Generation Time (s)')
+        ax6.set_ylabel('Frequency')
+        ax6.set_title('Distribution of Total Generation Times')
         ax6.legend()
         ax6.grid(True, alpha=0.3)
-        ax6.set_xticks(x)
-        ax6.set_xticklabels(all_gens)
     else:
-        ax6.text(0.5, 0.5, 'No complete time data\navailable', ha='center', va='center', transform=ax6.transAxes)
-        ax6.set_title('Generation Time Breakdown')
+        ax6.text(0.5, 0.5, 'No generation time data\navailable', ha='center', va='center', transform=ax6.transAxes)
+        ax6.set_title('Distribution of Total Generation Times')
     
     # # Add statistics text
     # avg_retry_count = np.mean(retry_counts) if retry_counts else 0
@@ -238,8 +269,8 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     # fig.text(0.02, 0.02, stats_text, fontsize=10, verticalalignment='bottom',
     #          bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
-    # Adjust layout to prevent overlapping labels
-    plt.tight_layout(rect=(0, 0.08, 1, 0.92), h_pad=3.0, w_pad=0.3)
+    # Add vertical padding between subplots
+    plt.subplots_adjust(hspace=0.6)
     
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
