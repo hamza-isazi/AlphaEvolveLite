@@ -30,7 +30,7 @@ TEMPLATE = """\
     Your response MUST follow this exact structure:
 
     ### Explanation
-    [Provide a short explanation of your proposed changes, reasoning, and expected improvements]
+    [Provide a high-level, concise summary of your proposed changes and expected improvements - keep this brief and focused]
 
     ### Code
     [Provide your code changes using one of the following formats]

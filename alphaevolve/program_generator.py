@@ -137,7 +137,7 @@ def generate_program(
             failure_type = "runtime_error"
         
         if retry_count < context.max_retries:
-        retry_count += 1
+            retry_count += 1
             context.logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
                         current_gen, individual_id, failure_type, retry_count, context.max_retries, error_message)
         else:
