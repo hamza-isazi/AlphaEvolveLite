@@ -1,5 +1,6 @@
 import tempfile
 import logging
+import time
 from concurrent.futures import TimeoutError
 from typing import List, Tuple
 from dataclasses import dataclass
@@ -59,9 +60,17 @@ def generate_program(
     
     parent_row, inspiration_rows = parent_data
     
+    # Track total generation time
+    generation_start_time = time.time()
+    
+    # Track total LLM time and total evaluation time
+    total_llm_time = 0.0
+    total_evaluation_time = 0.0
+    
     # Initial prompt
     prompt = context.prompt_sampler.build(parent_row, inspiration_rows)
-    initial_response = context.llm_instance.generate(prompt)
+    initial_response, initial_response_time = context.llm_instance.generate(prompt)
+    total_llm_time += initial_response_time
     
     # Parse initial response to get explanation and code
     explanation, code_section = parse_structured_response(initial_response)
@@ -82,7 +91,8 @@ def generate_program(
                 current_program, error_message, failure_type or "unknown_error"
             )
             
-            response = context.llm_instance.generate(retry_prompt)
+            response, response_time = context.llm_instance.generate(retry_prompt)
+            total_llm_time += response_time
             
             # Parse response to get new code
             _, code_section = parse_structured_response(response)
@@ -104,7 +114,8 @@ def generate_program(
                 tmp.flush()
                 
                 # Run evaluation with timeout
-                score = context.problem.evaluate_with_timeout(tmp.name, context.evaluation_timeout)
+                score, execution_time = context.problem.evaluate_with_timeout(tmp.name, context.evaluation_timeout)
+                total_evaluation_time += execution_time
                 
             # Success - exit retry loop
             failure_type = None
@@ -122,13 +133,17 @@ def generate_program(
             error_message = str(e)
             failure_type = "runtime_error"
         
-        retry_count += 1
-        if retry_count <= context.max_retries:
+        if retry_count < context.max_retries:
+            retry_count += 1
             context.logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
                         current_gen, individual_id, failure_type, retry_count, context.max_retries, error_message)
         else:
             context.logger.debug("Gen %d, Individual %d: %s, ran out of retries: %s", 
                         current_gen, individual_id, failure_type, error_message)
+            break
+    
+    # Calculate total generation time
+    generation_time = time.time() - generation_start_time
     
     # If the program failed to generate a valid score, return a ProgramRecord with the failure type
     if score is None:
@@ -140,16 +155,25 @@ def generate_program(
             score=None,
             gen=current_gen,
             parent_id=parent_row["id"],
-            failure_type=failure_type or "generation_failure"
+            failure_type=failure_type or "generation_failure",
+            retry_count=retry_count,
+            total_evaluation_time=total_evaluation_time,  # Total evaluation time across all attempts
+            generation_time=generation_time,
+            total_llm_time=total_llm_time
         )
 
-    # Success - return a ProgramRecord with the score
-    context.logger.debug("Gen %d, Individual %d: new score %.3f", current_gen, individual_id, score)
+    # Success - return a ProgramRecord with the score and total times
+    context.logger.debug("Gen %d, Individual %d: new score %.3f, total eval time %.2fs, generation time %.2fs, total LLM time %.2fs", 
+                current_gen, individual_id, score, total_evaluation_time, generation_time, total_llm_time)
     return ProgramRecord(
         code=current_program,
         explanation=explanation,
         score=score,
         gen=current_gen,
         parent_id=parent_row["id"],
-        failure_type=None
+        failure_type=None,
+        retry_count=retry_count,
+        total_evaluation_time=total_evaluation_time,  # Total evaluation time across all attempts
+        generation_time=generation_time,
+        total_llm_time=total_llm_time
     )

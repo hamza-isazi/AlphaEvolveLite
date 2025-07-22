@@ -47,7 +47,7 @@ def get_experiment_data(db_path: str, experiment_id: int) -> list:
     
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, code, score, gen, parent_id, experiment_id, failure_type
+        SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time
         FROM programs
         WHERE experiment_id = ?
         ORDER BY gen, score DESC
@@ -83,8 +83,8 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
             failure_types.add(p['failure_type'])
     failure_types = sorted(list(failure_types))
     
-    # Create figure with multiple subplots
-    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+    # Create figure with multiple subplots (2x3 layout since we're removing some time plots)
+    fig, ((ax1, ax2, ax3), (ax4, ax5, ax6)) = plt.subplots(2, 3, figsize=(18, 12))
     fig.suptitle(f'Evolution Progress: {experiment_label}', fontsize=16, fontweight='bold')
     
     # 1. Score vs Generation (all points)
@@ -160,19 +160,83 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     ax4.legend(bbox_to_anchor=(1.05, 1), loc='upper left')
     ax4.set_ylim(0, 100)
     
-    # Add statistics text
-    stats_text = f"""
-    Total Programs: {len(programs)}
-    Successful: {len(successful_programs)}
-    Failed: {len(failed_programs)}
-    Success Rate: {len(successful_programs)/len(programs)*100:.1f}%
-    Generations: {len(best_gens)}
-    Best Score: {max(scores):.4f}
-    Average Score: {np.mean(scores):.4f}
-    Score Std Dev: {np.std(scores):.4f}
-    """
-    fig.text(0.02, 0.02, stats_text, fontsize=10, verticalalignment='bottom',
-             bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    # 5. Average retry count per generation
+    retry_counts = [p['retry_count'] for p in programs]
+    gen_to_retries = {}
+    for gen, retries in zip(generations + [p['gen'] for p in failed_programs], retry_counts):
+        if gen not in gen_to_retries:
+            gen_to_retries[gen] = []
+        gen_to_retries[gen].append(retries)
+    
+    all_retry_gens = sorted(gen_to_retries.keys())
+    avg_retries = [np.mean(gen_to_retries[gen]) for gen in all_retry_gens]
+    
+    ax5.plot(all_retry_gens, avg_retries, 'o-', linewidth=2, markersize=6, color='purple')
+    ax5.set_xlabel('Generation')
+    ax5.set_ylabel('Average Retry Count')
+    ax5.set_title('Average Retry Count per Generation')
+    ax5.grid(True, alpha=0.3)
+    
+    # 6. Time breakdown comparison (stacked bar chart)
+    # Get all generations that have data for all time metrics
+    generation_times = [p['generation_time'] for p in programs if p['generation_time'] is not None]
+    total_evaluation_times = [p['total_evaluation_time'] for p in programs if p['total_evaluation_time'] is not None]
+    total_llm_times = [p['total_llm_time'] for p in programs if p['total_llm_time'] is not None]
+    
+    # Group by generation
+    gen_to_times = {}
+    for p in programs:
+        if p['generation_time'] is not None and p['total_evaluation_time'] is not None and p['total_llm_time'] is not None:
+            gen = p['gen']
+            if gen not in gen_to_times:
+                gen_to_times[gen] = {'gen_times': [], 'eval_times': [], 'llm_times': []}
+            gen_to_times[gen]['gen_times'].append(p['generation_time'])
+            gen_to_times[gen]['eval_times'].append(p['total_evaluation_time'])
+            gen_to_times[gen]['llm_times'].append(p['total_llm_time'])
+    
+    if gen_to_times:
+        all_gens = sorted(gen_to_times.keys())
+        avg_gen_times = [np.mean(gen_to_times[gen]['gen_times']) for gen in all_gens]
+        avg_eval_times = [np.mean(gen_to_times[gen]['eval_times']) for gen in all_gens]
+        avg_llm_times = [np.mean(gen_to_times[gen]['llm_times']) for gen in all_gens]
+        
+        # Calculate "other" time (generation time minus evaluation and LLM time)
+        other_times = [gen_time - eval_time - llm_time for gen_time, eval_time, llm_time in zip(avg_gen_times, avg_eval_times, avg_llm_times)]
+        
+        x = range(len(all_gens))
+        ax6.bar(x, avg_eval_times, label='Total Evaluation Time', color='orange', alpha=0.7)
+        ax6.bar(x, avg_llm_times, bottom=avg_eval_times, label='Total LLM Time', color='purple', alpha=0.7)
+        ax6.bar(x, other_times, bottom=[e+l for e, l in zip(avg_eval_times, avg_llm_times)], label='Other Time', color='gray', alpha=0.7)
+        
+        ax6.set_xlabel('Generation')
+        ax6.set_ylabel('Time (s)')
+        ax6.set_title('Generation Time Breakdown')
+        ax6.legend()
+        ax6.grid(True, alpha=0.3)
+        ax6.set_xticks(x)
+        ax6.set_xticklabels(all_gens)
+    else:
+        ax6.text(0.5, 0.5, 'No complete time data\navailable', ha='center', va='center', transform=ax6.transAxes)
+        ax6.set_title('Generation Time Breakdown')
+    
+    # # Add statistics text
+    # avg_retry_count = np.mean(retry_counts) if retry_counts else 0
+    # avg_exec_time = np.mean(execution_times) if execution_times else 0
+    # 
+    # stats_text = f"""
+    # Total Programs: {len(programs)}
+    # Successful: {len(successful_programs)}
+    # Failed: {len(failed_programs)}
+    # Success Rate: {len(successful_programs)/len(programs)*100:.1f}%
+    # Generations: {len(best_gens)}
+    # Best Score: {max(scores):.4f}
+    # Average Score: {np.mean(scores):.4f}
+    # Score Std Dev: {np.std(scores):.4f}
+    # Average Retry Count: {avg_retry_count:.1f}
+    # Average Evaluation Time: {avg_exec_time:.2f}s
+    # """
+    # fig.text(0.02, 0.02, stats_text, fontsize=10, verticalalignment='bottom',
+    #          bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
     
     # Adjust layout to prevent overlapping labels
     plt.tight_layout(rect=(0, 0.08, 1, 0.92), h_pad=3.0, w_pad=0.3)

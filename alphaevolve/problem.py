@@ -1,8 +1,9 @@
 import importlib.util
 import multiprocessing as mp
+import time
 from concurrent.futures import TimeoutError
 from pathlib import Path
-from typing import Callable
+from typing import Callable, Tuple
 import traceback
 
 class Problem:
@@ -20,7 +21,7 @@ class Problem:
             raise AttributeError("Evaluator must expose `evaluate(path) -> float`.")
         return getattr(module, "evaluate")
 
-    def evaluate_with_timeout(self, path: str, timeout: float) -> float:
+    def evaluate_with_timeout(self, path: str, timeout: float) -> Tuple[float, float]:
         """
         Run the evaluate function with a timeout in a separate process.
 
@@ -29,7 +30,7 @@ class Problem:
             timeout: Timeout in seconds
 
         Returns:
-            The evaluation result (float)
+            Tuple of (score, execution_time) where execution_time is in seconds
 
         Raises:
             TimeoutError: If the evaluation exceeds the specified timeout
@@ -38,9 +39,11 @@ class Problem:
         # Define the target function that will run in a separate process
         def target(queue):
             try:
+                start_time = time.time()
                 score = self.evaluate(path)
-                # Put the result in the queue for the parent process to retrieve
-                queue.put(score)
+                execution_time = time.time() - start_time
+                # Put the result and execution time in the queue
+                queue.put((score, execution_time))
             except Exception as e:
                 # Format the exception with a simplified traceback (last frame)
                 tb = traceback.extract_tb(e.__traceback__)
@@ -87,5 +90,5 @@ class Problem:
             # Re-raise the exception with context to preserve the original traceback
             raise result
             
-        # Return the evaluation score
+        # Return the evaluation score and execution time
         return result

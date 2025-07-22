@@ -1,12 +1,13 @@
 import os
-from typing import Protocol, List, cast
+import time
+from typing import Protocol, List, cast, Tuple
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from .config import LLMCfg
 
 class LLMEngine(Protocol):
-    def generate(self, prompt: str) -> str: ...
+    def generate(self, prompt: str) -> Tuple[str, float]: ...
     def add_message(self, role: str, content: str) -> None: ...
     def reset_conversation(self) -> None: ...
 
@@ -42,22 +43,26 @@ class BaseLLMEngine:
         """Reset the conversation history, keeping only the system prompt."""
         self.messages = [cast(ChatCompletionMessageParam, {"role": "system", "content": self.system_prompt})]
 
-    def generate(self, prompt: str) -> str:
+    def generate(self, prompt: str) -> Tuple[str, float]:
         # Add the user prompt to the conversation
         self.add_message("user", prompt)
         
+        # Track response time
+        start_time = time.time()
         response = self.client.chat.completions.create(
             model=self.model,
             messages=self.messages,
             temperature=self.temperature
         )
+        response_time = time.time() - start_time
+        
         content = response.choices[0].message.content
         
         # Add the assistant's response to the conversation
         if content:
             self.add_message("assistant", content)
         
-        return content.strip() if content else ""
+        return (content.strip() if content else "", response_time)
 
 
 class OpenAIEngine(BaseLLMEngine):

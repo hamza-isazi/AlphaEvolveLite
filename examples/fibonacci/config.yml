@@ -9,10 +9,10 @@ llm:
   # provider: openai
   # model: gpt-4o-mini          # or any model your key can access
   provider: gemini
-  model: gemini-1.5-flash     # or gemini-1.5-pro, gemini-1.0-pro, etc.
+  model: gemini-2.5-flash     # or gemini-2.5-pro, etc.
 
 evolution:
-  population_size: 20
+  population_size: 40
   temperature: 1.5
   max_generations: 10         # keeps PoC run short
   inspiration_count: 4        # number of inspirations to use in each generation

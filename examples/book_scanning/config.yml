@@ -1,13 +1,15 @@
 db_uri: sqlite:///alphaevolve.db
 
 experiment:
-  label: book-scanning        # human-readable tag
+  label: book-scanning-gemini        # human-readable tag
   notes: "Book scanning optimisation experiment (HashCode 2020)"
   save_top_k: 5               # number of top programs to save one completion of the experiment
 
 llm:
-  provider: openai
-  model: gpt-4o-mini         # or any model your key can access
+  # provider: openai
+  # model: gpt-4o-mini          # or any model your key can access
+  provider: gemini
+  model: gemini-2.5-flash     # or gemini-2.5-pro, etc.
   temperature: 0.9
   system_prompt: |
     You are an optimisation expert specialising in logistics and scheduling problems, assisting with a digitisation project involving millions of books from libraries around the world.
@@ -42,12 +44,12 @@ llm:
     input data and returns a string of output data.
 
 evolution:
-  population_size: 80
+  population_size: 40
   temperature: 1.5
-  max_generations: 10
+  max_generations: 5
   inspiration_count: 4        # number of inspirations to use in each generation
   max_retries: 3              # number of retries for failed program generation
-  evaluation_timeout: 30.0    # timeout in seconds for evaluation runs (0 = no timeout)
+  evaluation_timeout: 10.0    # timeout in seconds for evaluation runs (0 = no timeout)
 
 problem:
   entry_script: examples/book_scanning/initial_program.py

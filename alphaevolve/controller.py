@@ -23,7 +23,7 @@ class EvolutionController:
         
         # Seed archive with original solution
         seed_code = Path(cfg.problem_entry).read_text()
-        seed_score = self.context.problem.evaluate_with_timeout(cfg.problem_entry, cfg.evolution.evaluation_timeout)
+        seed_score, seed_execution_time = self.context.problem.evaluate_with_timeout(cfg.problem_entry, cfg.evolution.evaluation_timeout)
         if seed_score is None:
             self.logger.error("Seed evaluation timed out after %.1f seconds", cfg.evolution.evaluation_timeout)
             raise RuntimeError("Seed evaluation timed out")
@@ -33,7 +33,11 @@ class EvolutionController:
             explanation="Initial seed program", 
             score=seed_score, 
             gen=0, 
-            parent_id=None
+            parent_id=None,
+            retry_count=0,
+            total_evaluation_time=seed_execution_time,
+            generation_time=0.0,  # Seed doesn't go through generation process
+            total_llm_time=0.0  # Seed doesn't use LLM
         )
         self.context.database.add(seed_record)
         self.logger.info("Seed score %.3f", seed_score)
@@ -54,6 +58,20 @@ class EvolutionController:
         avg_fitness = statistics.mean(fitness_scores) if fitness_scores else 0.0
         best_fitness = max(fitness_scores) if fitness_scores else 0.0
         
+        # Calculate retry and total evaluation time statistics
+        retry_counts = [r.retry_count for r in program_records]
+        avg_retries = statistics.mean(retry_counts) if retry_counts else 0.0
+        
+        total_evaluation_times = [r.total_evaluation_time for r in program_records if r.total_evaluation_time is not None]
+        avg_total_evaluation_time = statistics.mean(total_evaluation_times) if total_evaluation_times else 0.0
+        
+        # Calculate generation time and total LLM time statistics
+        generation_times = [r.generation_time for r in program_records if r.generation_time is not None]
+        avg_generation_time = statistics.mean(generation_times) if generation_times else 0.0
+        
+        total_llm_times = [r.total_llm_time for r in program_records if r.total_llm_time is not None]
+        avg_total_llm_time = statistics.mean(total_llm_times) if total_llm_times else 0.0
+        
         # Count different types of failures
         syntax_errors = sum(1 for r in failed_records if r.failure_type == "syntax_error")
         evaluation_failures = sum(1 for r in failed_records if r.failure_type == "runtime_error")
@@ -70,6 +88,8 @@ class EvolutionController:
         self.logger.info("  Success Rate: %d/%d (%.1f%%)", 
                         successful_individuals, total_individuals, success_rate)
         self.logger.info("  Fitness - Avg: %.3f, Best: %.3f", avg_fitness, best_fitness)
+        self.logger.info("  Performance - Avg Retries: %.1f, Avg Total Eval Time: %.2fs, Avg Gen Time: %.2fs, Avg Total LLM Time: %.2fs", 
+                        avg_retries, avg_total_evaluation_time, avg_generation_time, avg_total_llm_time)
         self.logger.info("  Failures - Syntax Errors: %d (%.1f%%), Evaluation: %d (%.1f%%), Timeouts: %d (%.1f%%), Patches: %d (%.1f%%), Invalid Responses: %d (%.1f%%)",
                         syntax_errors, syntax_errors/total_individuals*100,
                         evaluation_failures, evaluation_failures/total_individuals*100,
@@ -103,7 +123,7 @@ class EvolutionController:
         program_records = []
         successful_individuals = 0
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 20)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 40)) as executor:
             # Submit all program generation tasks with pre-sampled data
             # Each worker will create its own program generation context to avoid sharing LLM instances
             future_to_id = {

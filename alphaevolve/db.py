@@ -17,12 +17,17 @@ class ProgramRecord:
     failure_type: Optional[str] = None
     id: Optional[int] = None
     experiment_id: Optional[int] = None
+    retry_count: int = 0
+    total_evaluation_time: Optional[float] = None
+    generation_time: Optional[float] = None
+    total_llm_time: Optional[float] = None
     
     def to_insert_tuple(self, experiment_id: int) -> Tuple:
         """Convert to tuple for database insertion."""
         return (
             self.code, self.explanation, self.score, self.gen, 
-            self.parent_id, experiment_id, self.failure_type
+            self.parent_id, experiment_id, self.failure_type, self.retry_count, 
+            self.total_evaluation_time, self.generation_time, self.total_llm_time
         )
 
 
@@ -59,6 +64,10 @@ class EvolutionaryDatabase:
                 parent_id INTEGER,
                 experiment_id INTEGER NOT NULL,
                 failure_type TEXT,
+                retry_count INTEGER DEFAULT 0,
+                total_evaluation_time REAL,
+                generation_time REAL,
+                total_llm_time REAL,
                 FOREIGN KEY(experiment_id) REFERENCES experiments(id)
                      ON DELETE CASCADE
             );
@@ -97,8 +106,8 @@ class EvolutionaryDatabase:
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             record.to_insert_tuple(self.experiment_id),
         )
