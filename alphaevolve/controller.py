@@ -154,8 +154,10 @@ class EvolutionController:
                             successful_individuals += 1                        
                         program_records.append(result)
                     except Exception as e:
+                        import traceback
                         self.logger.error("Gen %d, Individual %d: failed with exception: %s", 
                                         current_gen, individual_id, str(e))
+                        self.logger.error("Full traceback: %s", traceback.format_exc())
                     
                     pbar.update(1)
         

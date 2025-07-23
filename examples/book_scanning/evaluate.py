@@ -88,7 +88,6 @@ def evaluate(program_path: str) -> int:
     for file in sorted(Path(inputs_path).glob("*.in")):
         with open(file) as f:
             input_text = f.read()
-        try:
             start = time.time()
             
             output_text = main_function(input_text)
@@ -98,10 +97,6 @@ def evaluate(program_path: str) -> int:
 
             score = evaluate_input_output(input_text, output_text)
             results[file.name] = score
-        except Exception as e:
-            # Create a detailed error message for timeout
-            error_msg = f"Error processing file '{file.name}': {e}"
-            raise RuntimeError(error_msg)
 
     results['combined_score'] = sum(score for score in results.values() if isinstance(score, int))
     results['throughput'] = round(1/total_time, 3) if total_time != 0 else 0

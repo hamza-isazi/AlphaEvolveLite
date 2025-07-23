@@ -45,13 +45,16 @@ class Problem:
                 # Put the result and execution time in the queue
                 queue.put((score, execution_time))
             except Exception as e:
-                # Format the exception with a simplified traceback (last frame)
+                # Format the exception with a traceback so the LLM can see where the error occurred
                 tb = traceback.extract_tb(e.__traceback__)
                 if tb:
-                    last_frame = tb[-1]
-                    error_message = f"{str(e)}\n  File \"{last_frame.filename}\", line {last_frame.lineno}, in {last_frame.name}"
-                    if last_frame.line:
-                        error_message += f"\n    {last_frame.line.strip()}"
+                    # Skip the first frame (this function) and include all remaining frames
+                    frames = tb[1:]
+                    error_message = str(e)
+                    for frame in frames:
+                        error_message += f"\n  File \"{frame.filename}\", line {frame.lineno}, in {frame.name}"
+                        if frame.line:
+                            error_message += f"\n    {frame.line.strip()}"
                 else:
                     error_message = str(e)
                 # Put the formatted error message in the queue as an Exception
