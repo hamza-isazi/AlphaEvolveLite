@@ -130,7 +130,8 @@ def test_function():
     # EVOLVE-BLOCK-END
     return x + y
 """,
-        'score': 1.0
+        'score': 1.0,
+        'explanation': 'Test function with evolve blocks'
     }
     
     parent_without_blocks = {
@@ -140,7 +141,8 @@ def test_function():
     y = 2
     return x + y
 """,
-        'score': 1.0
+        'score': 1.0,
+        'explanation': 'Test function without evolve blocks'
     }
     
     sampler = PromptSampler(None)

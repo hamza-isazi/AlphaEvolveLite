@@ -12,14 +12,14 @@ TEMPLATE = """\
     # Prior programs
 
     Previously we found that the following programs performed well
-    on the task at hand:
+    on the task at hand. Each includes the developer's explanation of their improvements:
 
     {inspirations}
 
     # Current program
 
     Here is the current program we are trying to improve (you will
-    need to propose a modification to it below).
+    need to propose a modification to it below). It includes the developer's explanation of their improvements:
 
     {parent}
 
@@ -30,7 +30,8 @@ TEMPLATE = """\
     Your response MUST follow this exact structure:
 
     ### Explanation
-    [Provide a high-level, concise summary of your proposed changes and expected improvements - keep this brief and focused]
+    Briefly describe what you changed, why it helps, and what effect it's expected to have. Keep it under 3 sentences. 
+    Do not restate or refer to the current program. Avoid implementation details already visible in the code diff.
 
     ### Code
     [Provide your code changes using one of the following formats]
@@ -105,7 +106,8 @@ class PromptSampler:
     def _format_rows(rows: Sequence[Dict]) -> str:
         out = []
         for r in rows:
-            out.append(f"Score {r['score']:.3f}:\n```\n{r['code']}\n```")
+            explanation = r.get('explanation', 'No explanation provided')
+            out.append(f"Score {r['score']:.3f}:\nExplanation: {explanation}\n```\n{r['code']}\n```")
         return "\n\n".join(out) if out else "None yet."
 
     @staticmethod

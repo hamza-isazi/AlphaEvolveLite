@@ -1,7 +1,8 @@
 db_uri: sqlite:///alphaevolve.db
 
 experiment:
-  label: book-scanning-gemini        # human-readable tag
+  # label: book-scanning-openai        # human-readable tag
+  label: book-scanning-gemini-lite        # human-readable tag
   notes: "Book scanning optimisation experiment (HashCode 2020)"
   save_top_k: 5               # number of top programs to save one completion of the experiment
 
@@ -9,7 +10,7 @@ llm:
   # provider: openai
   # model: gpt-4o-mini          # or any model your key can access
   provider: gemini
-  model: gemini-2.5-flash     # or gemini-2.5-pro, etc.
+  model: gemini-2.5-flash-lite     # or gemini-2.5-pro, etc.
   temperature: 0.9
   system_prompt: |
     You are an optimisation expert specialising in logistics and scheduling problems, assisting with a digitisation project involving millions of books from libraries around the world.
