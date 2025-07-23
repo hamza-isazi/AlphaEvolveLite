@@ -84,7 +84,18 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     failure_types = sorted(list(failure_types))
     
     # Create figure with multiple subplots (3x2 layout for 6 graphs)
-    fig, ((ax1, ax2), (ax3, ax4), (ax5, ax6)) = plt.subplots(3, 2, figsize=(15, 18))
+    fig = plt.figure(figsize=(15, 20))
+    
+    # Create a grid layout with extra space at the top for stats
+    gs = fig.add_gridspec(4, 2, height_ratios=[0.15, 1, 1, 1], hspace=0.6)
+    
+    # Create subplots
+    ax1 = fig.add_subplot(gs[1, 0])  # First plot (top left)
+    ax2 = fig.add_subplot(gs[1, 1])  # Second plot (top right)
+    ax3 = fig.add_subplot(gs[2, 0])  # Third plot (middle left)
+    ax4 = fig.add_subplot(gs[2, 1])  # Fourth plot (middle right)
+    ax5 = fig.add_subplot(gs[3, 0])  # Fifth plot (bottom left)
+    ax6 = fig.add_subplot(gs[3, 1])  # Sixth plot (bottom right)
     
     # 1. Combined Score Analysis
     # Group scores by generation
@@ -167,10 +178,17 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     all_retry_gens = sorted(gen_to_retries.keys())
     avg_retries = [np.mean(gen_to_retries[gen]) for gen in all_retry_gens]
     
-    ax3.plot(all_retry_gens, avg_retries, 'o-', linewidth=2, markersize=6, color='purple')
+    # Plot all retry counts as scatter
+    all_retry_gens_scatter = [p['gen'] for p in programs]
+    ax3.scatter(all_retry_gens_scatter, retry_counts, alpha=0.4, color='blue', label='All Retry Counts')
+    
+    # Plot average retry count line
+    ax3.plot(all_retry_gens, avg_retries, 'o-', linewidth=2, markersize=6, color='red', label='Average Retry Count')
+    
     ax3.set_xlabel('Generation')
-    ax3.set_ylabel('Average Retry Count')
-    ax3.set_title('Average Retry Count per Generation')
+    ax3.set_ylabel('Retry Count')
+    ax3.set_title('Retry Count per Generation')
+    ax3.legend()
     ax3.grid(True, alpha=0.3)
     
     # 4. Average total tokens per generation
@@ -186,10 +204,18 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     all_token_gens = sorted(gen_to_tokens.keys())
     avg_tokens = [np.mean(gen_to_tokens[gen]) / 1000 for gen in all_token_gens]  # Convert to thousands
     
-    ax4.plot(all_token_gens, avg_tokens, 'o-', linewidth=2, markersize=6, color='green')
+    # Plot all token counts as scatter
+    all_token_gens_scatter = [p['gen'] for p in programs if p['total_tokens'] is not None]
+    all_token_values_scatter = [p['total_tokens'] / 1000 for p in programs if p['total_tokens'] is not None]
+    ax4.scatter(all_token_gens_scatter, all_token_values_scatter, alpha=0.4, color='blue', label='All Token Counts')
+    
+    # Plot average token count line
+    ax4.plot(all_token_gens, avg_tokens, 'o-', linewidth=2, markersize=6, color='red', label='Average Token Count')
+    
     ax4.set_xlabel('Generation')
-    ax4.set_ylabel('Average Total Tokens (thousands)')
-    ax4.set_title('Average Total Tokens per Generation')
+    ax4.set_ylabel('Total Tokens (thousands)')
+    ax4.set_title('Total Tokens per Generation')
+    ax4.legend()
     ax4.grid(True, alpha=0.3)
     
     # 5. Time breakdown comparison (stacked bar chart)
@@ -250,27 +276,26 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
         ax6.text(0.5, 0.5, 'No generation time data\navailable', ha='center', va='center', transform=ax6.transAxes)
         ax6.set_title('Distribution of Total Generation Times')
     
-    # # Add statistics text
-    # avg_retry_count = np.mean(retry_counts) if retry_counts else 0
-    # avg_exec_time = np.mean(execution_times) if execution_times else 0
-    # 
-    # stats_text = f"""
-    # Total Programs: {len(programs)}
-    # Successful: {len(successful_programs)}
-    # Failed: {len(failed_programs)}
-    # Success Rate: {len(successful_programs)/len(programs)*100:.1f}%
-    # Generations: {len(best_gens)}
-    # Best Score: {max(scores):.4f}
-    # Average Score: {np.mean(scores):.4f}
-    # Score Std Dev: {np.std(scores):.4f}
-    # Average Retry Count: {avg_retry_count:.1f}
-    # Average Evaluation Time: {avg_exec_time:.2f}s
-    # """
-    # fig.text(0.02, 0.02, stats_text, fontsize=10, verticalalignment='bottom',
-    #          bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8))
+    # Add statistics text in dedicated space above plots
+    avg_total_tokens = np.mean(total_tokens_list) if total_tokens_list else 0
+    avg_gen_time = np.mean(generation_times) if generation_times else 0
     
-    # Add vertical padding between subplots
-    plt.subplots_adjust(hspace=0.6)
+    stats_text = f"""
+    Total Programs: {len(programs)}
+    Best Score: {max(scores):.4f}
+    Average Score: {np.mean(scores):.4f}
+    Average Total Tokens: {avg_total_tokens:.2f}
+    Average Generation Time: {avg_gen_time:.2f}s
+    """
+    
+    # Create a dedicated subplot for stats at the top
+    stats_ax = fig.add_subplot(gs[0, :])  # Span both columns
+    stats_ax.axis('off')  # Hide axes
+    stats_ax.text(0.02, 0.5, stats_text, fontsize=10, verticalalignment='center',
+                 bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.8),
+                 transform=stats_ax.transAxes)
+    
+    # Gridspec handles spacing automatically
     
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
