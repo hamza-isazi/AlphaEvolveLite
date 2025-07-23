@@ -1,5 +1,6 @@
 import os
 import time
+import json
 from typing import Protocol, List, cast, Tuple
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
@@ -10,6 +11,7 @@ class LLMEngine(Protocol):
     def generate(self, prompt: str) -> Tuple[str, float, int]: ...
     def add_message(self, role: str, content: str) -> None: ...
     def reset_conversation(self) -> None: ...
+    def get_conversation_json(self) -> str: ...
 
 
 class BaseLLMEngine:
@@ -42,6 +44,10 @@ class BaseLLMEngine:
     def reset_conversation(self) -> None:
         """Reset the conversation history, keeping only the system prompt."""
         self.messages = [cast(ChatCompletionMessageParam, {"role": "system", "content": self.system_prompt})]
+
+    def get_conversation_json(self) -> str:
+        """Get the full conversation history as a JSON string."""
+        return json.dumps(self.messages, indent=2)
 
     def generate(self, prompt: str) -> Tuple[str, float, int]:
         # Add the user prompt to the conversation

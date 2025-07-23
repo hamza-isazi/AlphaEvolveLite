@@ -38,7 +38,8 @@ class EvolutionController:
             total_evaluation_time=seed_execution_time,
             generation_time=0.0,  # Seed doesn't go through generation process
             total_llm_time=0.0,  # Seed doesn't use LLM
-            total_tokens=0  # Seed doesn't use LLM
+            total_tokens=0,  # Seed doesn't use LLM
+            conversation=None  # Seed doesn't have LLM conversation
         )
         self.context.database.add(seed_record)
         self.logger.info("Seed score %.3f", seed_score)

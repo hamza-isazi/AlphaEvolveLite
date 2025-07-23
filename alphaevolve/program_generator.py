@@ -148,6 +148,9 @@ def generate_program(
     # Calculate total generation time
     generation_time = time.time() - generation_start_time
     
+    # Capture the full conversation history
+    conversation_json = context.llm_instance.get_conversation_json()
+    
     # If the program failed to generate a valid score, return a ProgramRecord with the failure type
     if score is None:
         context.logger.debug("Gen %d, Individual %d: generation failed (%s), skipping", 
@@ -163,7 +166,8 @@ def generate_program(
             total_evaluation_time=total_evaluation_time,  # Total evaluation time across all attempts
             generation_time=generation_time,
             total_llm_time=total_llm_time,
-            total_tokens=total_tokens
+            total_tokens=total_tokens,
+            conversation=conversation_json
         )
 
     # Success - return a ProgramRecord with the score and total times
@@ -180,5 +184,6 @@ def generate_program(
         total_evaluation_time=total_evaluation_time,  # Total evaluation time across all attempts
         generation_time=generation_time,
         total_llm_time=total_llm_time,
-        total_tokens=total_tokens
+        total_tokens=total_tokens,
+        conversation=conversation_json
     )

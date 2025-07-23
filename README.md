@@ -1,6 +1,14 @@
 # AlphaEvolveLite
 An open source simplified implementation of the AlphaEvolve evolutionary coding agent.
 
+## Features
+
+- **Evolutionary Program Generation**: Uses LLM-based mutation and selection to improve code
+- **Full Conversation Storage**: Stores complete LLM conversation history for each generated program
+- **Multiple LLM Providers**: Support for OpenAI and Google Gemini APIs
+- **Flexible Evaluation**: Custom evaluation functions for any programming problem
+- **Progress Tracking**: Detailed logging and visualization of evolution progress
+
 ## Directory Layout
 
 ```
@@ -49,6 +57,20 @@ python -m scripts.run examples/fibonacci/config.yml
 python -m scripts.run examples/fibonacci/config.yml --debug
 ```
 
+3. **View Conversation History**
+
+```bash
+# List all programs with conversation data
+python scripts/view_conversation.py --list-programs
+
+# View conversation for a specific program
+python scripts/view_conversation.py --program-id 123 --pretty
+
+# View conversation for programs in a specific experiment
+python scripts/view_conversation.py --list-programs --experiment "fib-baseline-v1"
+```
+
+
 ## Logging Features
 
 The system provides two logging modes:
@@ -71,9 +93,9 @@ The system provides two logging modes:
 
 | Module                           | Responsibility                                                                                                    |
 | -------------------------------- | ----------------------------------------------------------------------------------------------------------------- |
-| `db.EvolutionaryDatabase`        | CRUD for programs, metrics, and prompt cache. Minimal schema: `programs(id, code, score, gen, parent_id)`         |
+| `db.EvolutionaryDatabase`        | CRUD for programs, metrics, and prompt cache. Schema: `programs(id, code, score, gen, parent_id, conversation)`   |
 | `prompts.PromptSampler`          | Pull top-k & random elites, build prompt with block context, return to `LLMEngine`.                               |
-| `llm.LLMEngine`                  | Single `generate(prompt) → diff` using chosen provider.                                                           |
+| `llm.LLMEngine`                  | Single `generate(prompt) → diff` using chosen provider. Maintains conversation history.                           |
 | `patcher.PatchApplier`           | Apply diff, run syntax lint; returns valid code or `None`.                                                        |
 | `problem.ProblemAPI`             | User implements `evaluate(path) → float` and tags evolvable regions with `# EVOLVE-START/END`.                    |
 | `controller.EvolutionController` | Loop: sample parent → prompt LLM → patch → eval → store → iterate. Simple Boltzmann selection; single population. |
