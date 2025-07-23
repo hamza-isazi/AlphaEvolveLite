@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from .patcher import PatchApplier, PatchError
 from .prompts import PromptSampler
 from .problem import Problem
-from .llm import LLMEngine, create_llm_engine
+from .llm import LLMEngine
+from openai import OpenAI
 from .config import Config
 from .response_parser import parse_structured_response
 from .db import ProgramRecord
@@ -25,10 +26,10 @@ class ProgramGenerationContext:
     logger: logging.Logger
 
 
-def create_program_generation_context(cfg: Config, logger: logging.Logger) -> ProgramGenerationContext:
-    """Create a program generation context with all necessary dependencies."""
+def create_program_generation_context(cfg: Config, logger: logging.Logger, client: OpenAI) -> ProgramGenerationContext:
+    """Create a program generation context with all necessary dependencies."""    
     return ProgramGenerationContext(
-        llm_instance=create_llm_engine(cfg.llm),
+        llm_instance=LLMEngine(cfg.llm, client),
         patcher=PatchApplier(),
         problem=Problem(cfg.problem_entry, cfg.problem_eval),
         prompt_sampler=PromptSampler(None),  # No database needed for prompt building
@@ -43,7 +44,8 @@ def generate_program(
     parent_data: Tuple[dict, List[dict]], 
     current_gen: int,
     cfg: Config,
-    logger: logging.Logger
+    logger: logging.Logger,
+    client: OpenAI
 ) -> ProgramRecord:
     """
     Generate a single program for the population using pre-sampled data.
@@ -55,8 +57,8 @@ def generate_program(
     Returns:
         ProgramRecord object containing all generation results
     """
-    # Create program generation context for this individual to avoid sharing LLM instances
-    context = create_program_generation_context(cfg, logger)
+    # Create program generation context for this individual with the shared client
+    context = create_program_generation_context(cfg, logger, client)
     
     parent_row, inspiration_rows = parent_data
     

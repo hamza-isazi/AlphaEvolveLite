@@ -6,7 +6,7 @@ from tqdm import tqdm
 import statistics
 from .log import init_logger
 from .config import Config, ConfigContext
-from .program_generator import generate_program, create_program_generation_context
+from .program_generator import generate_program
 from .db import ProgramRecord
 
 
@@ -129,11 +129,11 @@ class EvolutionController:
         program_records = []
         successful_individuals = 0
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 40)) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 20)) as executor:
             # Submit all program generation tasks with pre-sampled data
-            # Each worker will create its own program generation context to avoid sharing LLM instances
+            # Each worker will create its own program generation context to avoid sharing conversation history
             future_to_id = {
-                executor.submit(generate_program, i, parent_data, current_gen, self.cfg, self.logger): i 
+                executor.submit(generate_program, i, parent_data, current_gen, self.cfg, self.logger, self.context.client): i 
                 for i, parent_data in enumerate(parent_inspiration_pairs)
             }
             

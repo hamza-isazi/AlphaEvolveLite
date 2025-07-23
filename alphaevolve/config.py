@@ -61,8 +61,8 @@ class ConfigContext:
         self._database = None
         self._problem = None
         self._prompt_sampler = None
-        self._llm = None
         self._patcher = None
+        self._client = None
     
     @property
     def database(self):
@@ -89,17 +89,17 @@ class ConfigContext:
         return self._prompt_sampler
     
     @property
-    def llm(self):
-        """Lazy initialization of LLM engine."""
-        if self._llm is None:
-            from .llm import create_llm_engine
-            self._llm = create_llm_engine(self.cfg.llm)
-        return self._llm
-    
-    @property
     def patcher(self):
         """Lazy initialization of patch applier."""
         if self._patcher is None:
             from .patcher import PatchApplier
             self._patcher = PatchApplier()
         return self._patcher
+
+    @property
+    def client(self):
+        """Lazy initialization of LLM client."""
+        if self._client is None:
+            from .llm import create_llm_client
+            self._client = create_llm_client(self.cfg.llm)
+        return self._client
