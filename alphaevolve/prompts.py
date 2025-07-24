@@ -23,8 +23,15 @@ TEMPLATE = """\
 
     {parent}
 
+    # Feedback from previous programs
+
+    The following feedback was generated for the programs above:
+
+    {feedback}
+
     # Task
     Suggest improvements to the program that will lead to better performance on the specified metrics.
+    Consider the feedback provided above when making your suggestions.
 
     # Response Format
     Your response MUST follow this exact structure:
@@ -97,10 +104,11 @@ FREE_INSTRUCTIONS = """\
 class PromptSampler:
     """Builds a single prompt each generation."""
 
-    def __init__(self, archive, k_elite=3, k_rand=2):
+    def __init__(self, archive, k_elite=3, k_rand=2, enable_feedback=True):
         self.archive = archive
         self.k_elite = k_elite
         self.k_rand = k_rand
+        self.enable_feedback = enable_feedback
         
     @staticmethod
     def _format_rows(rows: Sequence[Dict]) -> str:
@@ -111,6 +119,25 @@ class PromptSampler:
         return "\n\n".join(out) if out else "None yet."
 
     @staticmethod
+    def _format_feedback(rows: Sequence[Dict]) -> str:
+        """Format feedback from programs."""
+        feedback_parts = []
+        for r in rows:
+            feedback = r.get('feedback')
+            if feedback:
+                feedback_parts.append(f"**Score {r['score']:.3f}:**\n{feedback}")
+        return "\n\n".join(feedback_parts) if feedback_parts else "No feedback available yet."
+
+    @staticmethod
+    def _format_evaluation_logs(parent_row: Dict) -> str:
+        """Format evaluation logs for the parent program."""
+        logs = parent_row.get('evaluation_logs')
+        if logs:
+            return f"```\n{logs}\n```"
+        else:
+            return "No evaluation logs available."
+
+    @staticmethod
     def _has_evolve_blocks(code: str) -> bool:
         """Check if the code contains evolve blocks."""
         return bool(_EVOLVE_RE.search(code))
@@ -118,11 +145,18 @@ class PromptSampler:
     def build(self, parent_row: dict, inspiration_rows: Sequence[Dict]) -> str:
         # Choose evolve instructions based on whether evolve blocks are present
         evolve_instructions = EVOLVE_INSTRUCTIONS if self._has_evolve_blocks(parent_row['code']) else FREE_INSTRUCTIONS
-            
+        
+        # Combine parent and inspiration rows for feedback
+        all_programs = [parent_row] + list(inspiration_rows) if inspiration_rows else [parent_row]
+        
+        # Format feedback only if enabled
+        feedback_section = self._format_feedback(all_programs) if self.enable_feedback else "No feedback available."
+        
         prompt = TEMPLATE.format(
             parent=self._format_rows([parent_row]),
             inspirations=self._format_rows(inspiration_rows) if inspiration_rows else "None yet.",
-            evolve_instructions=evolve_instructions,
+            feedback=feedback_section,
+            evolve_instructions=evolve_instructions
         )
         return prompt
 

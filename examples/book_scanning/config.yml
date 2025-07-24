@@ -51,6 +51,7 @@ evolution:
   inspiration_count: 4        # number of inspirations to use in each generation
   max_retries: 3              # number of retries for failed program generation
   evaluation_timeout: 10.0    # timeout in seconds for evaluation runs (0 = no timeout)
+  enable_feedback: true       # Enable LLM-generated feedback for successful programs
 
 problem:
   entry_script: examples/book_scanning/initial_program.py

@@ -7,7 +7,7 @@ experiment:
 
 llm:
   provider: gemini
-  model: gemini-2.5-flash
+  model: gemini-2.5-flash-lite
   temperature: 0.9
   system_prompt: |
     You are an expert software engineer solving the following challenge:
@@ -50,10 +50,11 @@ llm:
 evolution:
   population_size: 40
   temperature: 1.2
-  max_generations: 5
+  max_generations: 10
   inspiration_count: 3
   max_retries: 3
   evaluation_timeout: 60.0
+  enable_feedback: true  # Enable LLM-generated feedback for successful programs
 
 problem:
   entry_script: examples/timetable_optimization/solution.py

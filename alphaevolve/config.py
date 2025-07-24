@@ -26,6 +26,7 @@ class EvolCfg:
     inspiration_count: int
     max_retries: int = 3   # Number of retries for failed program generation
     evaluation_timeout: float = 60.0  # Timeout in seconds for evaluation runs
+    enable_feedback: bool = True  # Enable LLM-generated feedback for successful programs
 
 
 @dataclass
@@ -42,6 +43,10 @@ class Config:
     def load(cls, path: str | Path) -> "Config":
         with open(path, "r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
+        return cls.from_dict(data)
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Config":
         return cls(
             db_uri=data["db_uri"],
             exp=ExpCfg(**data["experiment"]),
@@ -85,7 +90,7 @@ class ConfigContext:
         """Lazy initialization of prompt sampler."""
         if self._prompt_sampler is None:
             from .prompts import PromptSampler
-            self._prompt_sampler = PromptSampler(self.database)
+            self._prompt_sampler = PromptSampler(self.database, enable_feedback=self.cfg.evolution.enable_feedback)
         return self._prompt_sampler
     
     @property
