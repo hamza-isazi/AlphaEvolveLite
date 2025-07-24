@@ -21,6 +21,6 @@ Output expected format:
 The output should be in .csv format, with two columns: timeslot and class. A class and timeslot in the same row indicates that that timeslot is assigned to that class, i.e. there is a lesson of that class scheduled to occur at that time.
 
 Testing:
-Run python opt_test.py <your_solution_filename>
-Make sure the input files are in the same directory as the test file.
+Run python evaluate.py <your_solution_filename>
+Make sure the input files are in the inputs directory.
 
