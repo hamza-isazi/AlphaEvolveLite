@@ -23,7 +23,7 @@ class EvolutionController:
         
         # Seed archive with original solution
         seed_code = Path(cfg.problem_entry).read_text()
-        seed_score, seed_execution_time = self.context.problem.evaluate_with_timeout(cfg.problem_entry, cfg.evolution.evaluation_timeout)
+        seed_score, seed_execution_time, seed_logs = self.context.problem.evaluate_with_timeout(cfg.problem_entry, cfg.evolution.evaluation_timeout)
         if seed_score is None:
             self.logger.error("Seed evaluation timed out after %.1f seconds", cfg.evolution.evaluation_timeout)
             raise RuntimeError("Seed evaluation timed out")
@@ -39,7 +39,8 @@ class EvolutionController:
             generation_time=0.0,  # Seed doesn't go through generation process
             total_llm_time=0.0,  # Seed doesn't use LLM
             total_tokens=0,  # Seed doesn't use LLM
-            conversation=None  # Seed doesn't have LLM conversation
+            conversation=None,  # Seed doesn't have LLM conversation
+            evaluation_logs=seed_logs  # Store seed evaluation logs
         )
         self.context.database.add(seed_record)
         self.logger.info("Seed score %.3f", seed_score)

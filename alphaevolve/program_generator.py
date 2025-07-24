@@ -65,10 +65,11 @@ def generate_program(
     # Track total generation time
     generation_start_time = time.time()
     
-    # Track total LLM time, total evaluation time, and total tokens
+    # Track total LLM time, total evaluation time, total tokens, and evaluation logs
     total_llm_time = 0.0
     total_evaluation_time = 0.0
     total_tokens = 0
+    logs = None
     
     # Initial prompt
     prompt = context.prompt_sampler.build(parent_row, inspiration_rows)
@@ -119,7 +120,7 @@ def generate_program(
                 tmp.flush()
                 
                 # Run evaluation with timeout
-                score, execution_time = context.problem.evaluate_with_timeout(tmp.name, context.evaluation_timeout)
+                score, execution_time, logs = context.problem.evaluate_with_timeout(tmp.name, context.evaluation_timeout)
                 total_evaluation_time += execution_time
                 
             # Success - exit retry loop
@@ -169,7 +170,8 @@ def generate_program(
             generation_time=generation_time,
             total_llm_time=total_llm_time,
             total_tokens=total_tokens,
-            conversation=conversation_json
+            conversation=conversation_json,
+            evaluation_logs=logs
         )
 
     # Success - return a ProgramRecord with the score and total times
@@ -187,5 +189,6 @@ def generate_program(
         generation_time=generation_time,
         total_llm_time=total_llm_time,
         total_tokens=total_tokens,
-        conversation=conversation_json
+        conversation=conversation_json,
+        evaluation_logs=logs
     )

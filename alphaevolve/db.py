@@ -23,6 +23,7 @@ class ProgramRecord:
     total_llm_time: Optional[float] = None
     total_tokens: Optional[int] = None
     conversation: Optional[str] = None  # JSON string containing full LLM conversation
+    evaluation_logs: Optional[str] = None  # String containing evaluation logs
     
     def to_insert_tuple(self, experiment_id: int) -> Tuple:
         """Convert to tuple for database insertion."""
@@ -30,7 +31,7 @@ class ProgramRecord:
             self.code, self.explanation, self.score, self.gen, 
             self.parent_id, experiment_id, self.failure_type, self.retry_count, 
             self.total_evaluation_time, self.generation_time, self.total_llm_time, self.total_tokens,
-            self.conversation
+            self.conversation, self.evaluation_logs
         )
 
 
@@ -73,6 +74,7 @@ class EvolutionaryDatabase:
                 total_llm_time REAL,
                 total_tokens INTEGER,
                 conversation TEXT,
+                evaluation_logs TEXT,
                 FOREIGN KEY(experiment_id) REFERENCES experiments(id)
                      ON DELETE CASCADE
             );
@@ -111,8 +113,8 @@ class EvolutionaryDatabase:
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation, evaluation_logs)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             record.to_insert_tuple(self.experiment_id),
         )
