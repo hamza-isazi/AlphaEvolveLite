@@ -183,6 +183,7 @@ llm:
   provider: gemini
   model: gemini-2.5-flash
   temperature: 0.9
+  llm_timeout: 120
   system_prompt: |
     You are an expert software engineer solving the following challenge:
     [Your problem description here]
@@ -193,7 +194,7 @@ evolution:
   max_generations: 5
   inspiration_count: 3
   max_retries: 3
-  evaluation_timeout: 60.0
+  eval_timeout: 60.0
 
 problem:
   entry_script: path/to/your/solution.py

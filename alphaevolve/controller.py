@@ -23,11 +23,7 @@ class EvolutionController:
         
         # Seed archive with original solution
         seed_code = Path(cfg.problem_entry).read_text()
-        seed_score, seed_execution_time, seed_logs = self.context.problem.evaluate_with_timeout(cfg.problem_entry, cfg.evolution.evaluation_timeout)
-        if seed_score is None:
-            self.logger.error("Seed evaluation timed out after %.1f seconds", cfg.evolution.evaluation_timeout)
-            raise RuntimeError("Seed evaluation timed out")
-        
+        seed_score, seed_execution_time, seed_logs = self.context.problem.evaluate_with_timeout(cfg.problem_entry, cfg.evolution.eval_timeout) 
         seed_record = ProgramRecord(
             gen=0,
             parent_id=None,

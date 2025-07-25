@@ -1,13 +1,13 @@
 db_uri: sqlite:///alphaevolve.db
 
 experiment:
-  label: timetable-optimization-v1-openai
+  label: timetable-optimization-v1-gemini
   notes: "Timetable optimization problem - creating optimal class schedules"
   save_top_k: 5
 
 llm:
-  provider: openai
-  model: gpt-4o-mini
+  provider: gemini
+  model: gemini-2.0-flash-001
   temperature: 0.9
   system_prompt: |
     You are an expert software engineer solving the following challenge:
@@ -52,7 +52,7 @@ evolution:
   max_generations: 10
   inspiration_count: 3
   max_retries: 3
-  evaluation_timeout: 30.0
+  eval_timeout: 30.0
   enable_feedback: true  # Enable LLM-generated feedback for successful programs
 
 problem:

@@ -22,7 +22,7 @@ class ProgramGenerationContext:
     problem: Problem
     prompt_sampler: PromptSampler
     max_retries: int
-    evaluation_timeout: float
+    eval_timeout: float
     logger: logging.Logger
 
 
@@ -34,7 +34,7 @@ def create_program_generation_context(cfg: Config, logger: logging.Logger, clien
         problem=Problem(cfg.problem_entry, cfg.problem_eval),
         prompt_sampler=PromptSampler(None, enable_feedback=cfg.evolution.enable_feedback),  # No database needed for prompt building
         max_retries=cfg.evolution.max_retries,
-        evaluation_timeout=cfg.evolution.evaluation_timeout,
+        eval_timeout=cfg.evolution.eval_timeout,
         logger=logger
     )
 
@@ -61,7 +61,7 @@ def handle_evaluation_error(error: Exception, context: ProgramGenerationContext)
     elif isinstance(error, SyntaxError):
         return f"Syntax error: {str(error)}", "syntax_error"
     elif isinstance(error, TimeoutError):
-        return f"Evaluation timed out after {context.evaluation_timeout} seconds", "timeout"
+        return f"Evaluation timed out after {context.eval_timeout} seconds", "timeout"
     else:
         return str(error), "runtime_error"
 
@@ -174,7 +174,7 @@ def generate_program(
                 tmp.flush()
                 
                 # Run evaluation with timeout
-                score, execution_time, logs = context.problem.evaluate_with_timeout(tmp.name, context.evaluation_timeout)
+                score, execution_time, logs = context.problem.evaluate_with_timeout(tmp.name, context.eval_timeout)
             record.score = score
             record.total_evaluation_time += execution_time
             record.evaluation_logs = logs

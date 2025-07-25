@@ -14,6 +14,7 @@ class LLMEngine:
         self.model = llm_cfg.model
         self.system_prompt = llm_cfg.system_prompt
         self.temperature = llm_cfg.temperature
+        self.llm_timeout = llm_cfg.llm_timeout
         self.client = client
             
         self.messages: List[ChatCompletionMessageParam] = [
@@ -42,7 +43,8 @@ class LLMEngine:
         response = self.client.chat.completions.create(
             model=self.model,
             messages=self.messages,
-            temperature=self.temperature
+            temperature=self.temperature,
+            timeout=self.llm_timeout
         )
         response_time = time.time() - start_time
         

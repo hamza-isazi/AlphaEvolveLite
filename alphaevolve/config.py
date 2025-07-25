@@ -16,6 +16,7 @@ class LLMCfg:
     model: str
     temperature: float = 0.7
     system_prompt: str = "You are an expert software developer evolving Python code using diffs."
+    llm_timeout: float = 120.0  # Timeout in seconds for LLM API calls
 
 
 @dataclass
@@ -25,7 +26,7 @@ class EvolCfg:
     max_generations: int
     inspiration_count: int
     max_retries: int = 3   # Number of retries for failed program generation
-    evaluation_timeout: float = 60.0  # Timeout in seconds for evaluation runs
+    eval_timeout: float = 60.0  # Timeout in seconds for evaluation runs
     enable_feedback: bool = True  # Enable LLM-generated feedback for successful programs
 
 
