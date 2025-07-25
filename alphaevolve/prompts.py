@@ -12,26 +12,19 @@ TEMPLATE = """\
     # Prior programs
 
     Previously we found that the following programs performed well
-    on the task at hand. Each includes the developer's explanation of their improvements:
+    on the task at hand. Each includes the developer's explanation of their improvements and feedback:
 
     {inspirations}
 
     # Current program
 
     Here is the current program we are trying to improve (you will
-    need to propose a modification to it below). It includes the developer's explanation of their improvements:
+    need to propose a modification to it below). It includes the developer's explanation of their improvements and feedback:
 
     {parent}
 
-    # Feedback from previous programs
-
-    The following feedback was generated for the programs above:
-
-    {feedback}
-
     # Task
     Suggest improvements to the program that will lead to better performance on the specified metrics.
-    Consider the feedback provided above when making your suggestions.
 
     # Response Format
     Your response MUST follow this exact structure:
@@ -101,6 +94,38 @@ EVOLVE_INSTRUCTIONS = """\
 FREE_INSTRUCTIONS = """\
     - You can modify any part of the code as needed."""
 
+FEEDBACK_PROMPT = """\
+You are an expert evaluator. Analyze the following program's performance and explain why it achieved the score it did.
+
+**Program Code:**
+```python
+{code}
+```
+
+**Program Score:** {score}
+
+**Evaluation Script:**
+```python
+{evaluation_script}
+```
+
+**Evaluation Logs:**
+{logs}
+
+**Task:** Provide 2-3 concise insights explaining why this program achieved its specific score. Focus on:
+- What the evaluation script is measuring and how the program performed on each metric
+- Specific test cases or criteria that the program passed or failed
+- Performance characteristics that contributed to the score (speed, accuracy, etc.)
+- Any constraints or requirements that the program met or violated
+
+Your analysis should explain the score, not suggest improvements. The goal is to understand what worked and what didn't based on the evaluation results.
+
+Keep your analysis brief and specific. Each insight should be 1-2 sentences maximum."""
+
+
+
+
+
 class PromptSampler:
     """Builds a single prompt each generation."""
 
@@ -111,22 +136,19 @@ class PromptSampler:
         self.enable_feedback = enable_feedback
         
     @staticmethod
-    def _format_rows(rows: Sequence[Dict]) -> str:
+    def _format_rows(rows: Sequence[Dict], include_feedback: bool = True) -> str:
         out = []
         for r in rows:
             explanation = r.get('explanation', 'No explanation provided')
-            out.append(f"Score {r['score']:.3f}:\nExplanation: {explanation}\n```\n{r['code']}\n```")
-        return "\n\n".join(out) if out else "None yet."
-
-    @staticmethod
-    def _format_feedback(rows: Sequence[Dict]) -> str:
-        """Format feedback from programs."""
-        feedback_parts = []
-        for r in rows:
             feedback = r.get('feedback')
-            if feedback:
-                feedback_parts.append(f"**Score {r['score']:.3f}:**\n{feedback}")
-        return "\n\n".join(feedback_parts) if feedback_parts else "No feedback available yet."
+            
+            program_text = f"Score {r['score']:.3f}:\nExplanation: {explanation}\n```\n{r['code']}\n```"
+            
+            if include_feedback and feedback:
+                program_text += f"\n\nFeedback:\n{feedback}"
+            
+            out.append(program_text)
+        return "\n\n".join(out) if out else "None yet."
 
     @staticmethod
     def _format_evaluation_logs(parent_row: Dict) -> str:
@@ -146,16 +168,9 @@ class PromptSampler:
         # Choose evolve instructions based on whether evolve blocks are present
         evolve_instructions = EVOLVE_INSTRUCTIONS if self._has_evolve_blocks(parent_row['code']) else FREE_INSTRUCTIONS
         
-        # Combine parent and inspiration rows for feedback
-        all_programs = [parent_row] + list(inspiration_rows) if inspiration_rows else [parent_row]
-        
-        # Format feedback only if enabled
-        feedback_section = self._format_feedback(all_programs) if self.enable_feedback else "No feedback available."
-        
         prompt = TEMPLATE.format(
-            parent=self._format_rows([parent_row]),
-            inspirations=self._format_rows(inspiration_rows) if inspiration_rows else "None yet.",
-            feedback=feedback_section,
+            parent=self._format_rows([parent_row], include_feedback=self.enable_feedback),
+            inspirations=self._format_rows(inspiration_rows, include_feedback=self.enable_feedback) if inspiration_rows else "None yet.",
             evolve_instructions=evolve_instructions
         )
         return prompt
@@ -166,4 +181,23 @@ class PromptSampler:
             current_code=f"```\n{current_code}\n```",
             error_message=error_message,
             failure_type=failure_type
+        )
+    
+    def build_feedback_prompt(self, code: str, score: float, logs: str, evaluation_script_path: str = None) -> str:
+        """Build a feedback prompt for analyzing program performance."""
+        # Read the evaluation script if provided
+        evaluation_script_content = "No evaluation script available."
+        if evaluation_script_path:
+            try:
+                with open(evaluation_script_path, 'r', encoding='utf-8') as f:
+                    evaluation_script_content = f.read()
+            except Exception as e:
+                evaluation_script_content = f"Error reading evaluation script: {str(e)}"
+        
+        # Build the feedback prompt
+        return FEEDBACK_PROMPT.format(
+            code=code,
+            score=f"{score:.3f}",
+            evaluation_script=evaluation_script_content,
+            logs=logs if logs else "No evaluation logs available."
         )

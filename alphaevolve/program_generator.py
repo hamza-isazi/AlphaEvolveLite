@@ -14,27 +14,6 @@ from .config import Config
 from .response_parser import parse_structured_response
 from .db import ProgramRecord
 
-FEEDBACK_PROMPT = """\
-You are an expert code reviewer. Analyze the following program and provide concise feedback on potential issues or areas for improvement.
-
-**Program Code:**
-```python
-{code}
-```
-
-**Program Score:** {score}
-
-**Evaluation Logs:**
-{logs}
-
-**Task:** Provide 2-3 concise, critical, and constructive feedback on this program. Focus on:
-- Performance issues
-- Code quality problems
-- Logic errors or edge cases
-- Potential optimizations
-
-Keep your feedback brief and specific. Each suggestion should be 1-2 sentences maximum."""
-
 @dataclass
 class ProgramGenerationContext:
     """Context object containing all dependencies needed for program generation."""
@@ -60,16 +39,17 @@ def create_program_generation_context(cfg: Config, logger: logging.Logger, clien
     )
 
 
-def generate_feedback(code: str, score: float, logs: str, llm_instance: LLMEngine) -> str:
+def generate_feedback(code: str, score: float, logs: str, llm_instance: LLMEngine, evaluation_script_path: str = None) -> str:
     """
-    Generate feedback for a successful program by resetting the conversation
-    and asking for concise feedback on issues with the program.
+    Generate feedback for a program by resetting the conversation
+    and asking for insights into why the program achieved its specific score.
     
     Args:
         code: The program code
         score: The program's score
         logs: The evaluation logs
         llm_instance: The LLM engine instance
+        evaluation_script_path: Path to the evaluation script
         
     Returns:
         Generated feedback as a string
@@ -77,12 +57,9 @@ def generate_feedback(code: str, score: float, logs: str, llm_instance: LLMEngin
     # Reset the conversation to start fresh
     llm_instance.reset_conversation()
     
-    # Build the feedback prompt
-    feedback_prompt = FEEDBACK_PROMPT.format(
-        code=code,
-        score=f"{score:.3f}",
-        logs=logs if logs else "No evaluation logs available."
-    )
+    # Create a prompt sampler to build the feedback prompt
+    prompt_sampler = PromptSampler(None, enable_feedback=True)
+    feedback_prompt = prompt_sampler.build_feedback_prompt(code, score, logs, evaluation_script_path)
     
     # Generate feedback
     feedback_response, _, _ = llm_instance.generate(feedback_prompt)
@@ -228,7 +205,7 @@ def generate_program(
     # Success - generate feedback for the successful program if enabled
     feedback = None
     if cfg.evolution.enable_feedback:
-        feedback = generate_feedback(current_program, score, logs, context.llm_instance)
+        feedback = generate_feedback(current_program, score, logs, context.llm_instance, cfg.problem_eval)
     
     # Success - return a ProgramRecord with the score and total times
     context.logger.debug("Gen %d, Individual %d: new score %.3f, total eval time %.2fs, generation time %.2fs, total LLM time %.2fs, total tokens %d", 

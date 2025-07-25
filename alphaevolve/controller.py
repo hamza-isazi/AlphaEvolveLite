@@ -34,7 +34,7 @@ class EvolutionController:
             from .program_generator import generate_feedback
             from .llm import LLMEngine
             seed_llm = LLMEngine(cfg.llm, self.context.client)
-            seed_feedback = generate_feedback(seed_code, seed_score, seed_logs, seed_llm)
+            seed_feedback = generate_feedback(seed_code, seed_score, seed_logs, seed_llm, cfg.problem_eval)
         
         seed_record = ProgramRecord(
             code=seed_code, 
