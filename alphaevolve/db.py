@@ -15,13 +15,14 @@ class ProgramRecord:
     gen: int
     parent_id: Optional[int]
     failure_type: Optional[str] = None
+    error_message: Optional[str] = None
     id: Optional[int] = None
     experiment_id: Optional[int] = None
     retry_count: int = 0
-    total_evaluation_time: Optional[float] = None
-    generation_time: Optional[float] = None
-    total_llm_time: Optional[float] = None
-    total_tokens: Optional[int] = None
+    total_evaluation_time: float = 0.0
+    generation_time: float = 0.0
+    total_llm_time: float = 0.0
+    total_tokens: int = 0
     conversation: Optional[str] = None  # JSON string containing full LLM conversation
     evaluation_logs: Optional[str] = None  # String containing evaluation logs
     feedback: Optional[str] = None  # String containing LLM-generated feedback
@@ -30,7 +31,7 @@ class ProgramRecord:
         """Convert to tuple for database insertion."""
         return (
             self.code, self.explanation, self.score, self.gen, 
-            self.parent_id, experiment_id, self.failure_type, self.retry_count, 
+            self.parent_id, experiment_id, self.failure_type, self.error_message, self.retry_count, 
             self.total_evaluation_time, self.generation_time, self.total_llm_time, self.total_tokens,
             self.conversation, self.evaluation_logs, self.feedback
         )
@@ -69,6 +70,7 @@ class EvolutionaryDatabase:
                 parent_id INTEGER,
                 experiment_id INTEGER NOT NULL,
                 failure_type TEXT,
+                error_message TEXT,
                 retry_count INTEGER DEFAULT 0,
                 total_evaluation_time REAL,
                 generation_time REAL,
@@ -115,8 +117,8 @@ class EvolutionaryDatabase:
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation, evaluation_logs, feedback)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, error_message, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation, evaluation_logs, feedback)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             record.to_insert_tuple(self.experiment_id),
         )

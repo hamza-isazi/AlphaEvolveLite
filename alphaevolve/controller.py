@@ -28,29 +28,21 @@ class EvolutionController:
             self.logger.error("Seed evaluation timed out after %.1f seconds", cfg.evolution.evaluation_timeout)
             raise RuntimeError("Seed evaluation timed out")
         
-        # Generate feedback for the seed program if enabled
-        seed_feedback = None
-        if cfg.evolution.enable_feedback:
-            from .program_generator import generate_feedback
-            from .llm import LLMEngine
-            seed_llm = LLMEngine(cfg.llm, self.context.client)
-            seed_feedback = generate_feedback(seed_code, seed_score, seed_logs, seed_llm, cfg.problem_eval)
-        
         seed_record = ProgramRecord(
+            gen=0,
+            parent_id=None,
             code=seed_code, 
             explanation="Initial seed program", 
-            score=seed_score, 
-            gen=0, 
-            parent_id=None,
-            retry_count=0,
+            score=seed_score,
             total_evaluation_time=seed_execution_time,
-            generation_time=0.0,  # Seed doesn't go through generation process
-            total_llm_time=0.0,  # Seed doesn't use LLM
-            total_tokens=0,  # Seed doesn't use LLM
-            conversation=None,  # Seed doesn't have LLM conversation
-            evaluation_logs=seed_logs,  # Store seed evaluation logs
-            feedback=seed_feedback  # Store seed feedback
+            evaluation_logs=seed_logs
         )
+        # Generate feedback for the seed program if enabled
+        if cfg.evolution.enable_feedback:
+            from .program_generator import create_program_generation_context, generate_feedback
+            seed_context = create_program_generation_context(cfg, self.logger, self.context.client)
+            seed_feedback = generate_feedback(seed_record, seed_context, cfg.problem_eval)
+            seed_record.feedback = seed_feedback
         self.context.database.add(seed_record)
         self.logger.info("Seed score %.3f", seed_score)
 

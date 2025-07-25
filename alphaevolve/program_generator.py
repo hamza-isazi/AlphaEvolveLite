@@ -2,7 +2,7 @@ import tempfile
 import logging
 import time
 from concurrent.futures import TimeoutError
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
 from .patcher import PatchApplier, PatchError
@@ -39,30 +39,68 @@ def create_program_generation_context(cfg: Config, logger: logging.Logger, clien
     )
 
 
-def generate_feedback(code: str, score: float, logs: str, llm_instance: LLMEngine, evaluation_script_path: str = None) -> str:
+def generate_initial_response(context: ProgramGenerationContext, parent_row: dict, inspiration_rows: List[dict], record: ProgramRecord) -> Tuple[Optional[str], Optional[str]]:
+    """Generate the initial response in the form of an explanation and a code diff section from parent and inspiration data."""
+    prompt = context.prompt_sampler.build(parent_row, inspiration_rows)
+    initial_response, initial_response_time, initial_tokens = context.llm_instance.generate(prompt)
+    
+    # Update record metrics
+    record.total_llm_time += initial_response_time
+    record.total_tokens += initial_tokens
+    
+    # Parse initial response to get explanation and code
+    explanation, code_section = parse_structured_response(initial_response)
+    
+    return explanation, code_section
+
+
+def handle_evaluation_error(error: Exception, context: ProgramGenerationContext) -> Tuple[str, str]:
+    """Handle evaluation errors and return error message and failure type."""
+    if isinstance(error, PatchError):
+        return str(error), "patch_failure"
+    elif isinstance(error, SyntaxError):
+        return f"Syntax error: {str(error)}", "syntax_error"
+    elif isinstance(error, TimeoutError):
+        return f"Evaluation timed out after {context.evaluation_timeout} seconds", "timeout"
+    else:
+        return str(error), "runtime_error"
+
+
+def generate_retry_response(context: ProgramGenerationContext, record: ProgramRecord) -> Optional[str]:
+    """Generate a retry response when initial generation fails.
+    This is a response to the error message and failure type, and is used to generate a new code diff section."""
+    retry_prompt = context.prompt_sampler.build_retry_prompt(
+        record.code, record.error_message, record.failure_type
+    )
+    
+    response, response_time, response_tokens = context.llm_instance.generate(retry_prompt)
+    record.total_llm_time += response_time
+    record.total_tokens += response_tokens
+    
+    # Parse the retry response to get new code
+    _, code_section = parse_structured_response(response)
+    return code_section
+
+
+def generate_feedback(record: ProgramRecord, ctx: ProgramGenerationContext, evaluation_script_path: str = None) -> str:
     """
-    Generate feedback for a program by resetting the conversation
-    and asking for insights into why the program achieved its specific score.
+    Generate feedback for a program by asking for insights into why the program achieved its specific score.
     
     Args:
-        code: The program code
-        score: The program's score
-        logs: The evaluation logs
-        llm_instance: The LLM engine instance
+        record: The program record
+        ctx: The program generation context
         evaluation_script_path: Path to the evaluation script
         
     Returns:
         Generated feedback as a string
     """
-    # Reset the conversation to start fresh
-    llm_instance.reset_conversation()
-    
     # Create a prompt sampler to build the feedback prompt
-    prompt_sampler = PromptSampler(None, enable_feedback=True)
-    feedback_prompt = prompt_sampler.build_feedback_prompt(code, score, logs, evaluation_script_path)
+    feedback_prompt = ctx.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs, evaluation_script_path)
     
     # Generate feedback
-    feedback_response, _, _ = llm_instance.generate(feedback_prompt)
+    feedback_response, response_time, response_tokens = ctx.llm_instance.generate(feedback_prompt)
+    record.total_llm_time += response_time
+    record.total_tokens += response_tokens
     
     return feedback_response.strip() if feedback_response else "No feedback generated."
 
@@ -90,139 +128,84 @@ def generate_program(
     
     parent_row, inspiration_rows = parent_data
     
-    # Track total generation time
+    # Create the program record at the start and update it as we go
     generation_start_time = time.time()
+    record = ProgramRecord(
+        code=parent_row["code"],
+        explanation="",
+        score=None,
+        gen=current_gen,
+        parent_id=parent_row["id"]
+    )
     
-    # Track total LLM time, total evaluation time, total tokens, and evaluation logs
-    total_llm_time = 0.0
-    total_evaluation_time = 0.0
-    total_tokens = 0
-    logs = None
-    
-    # Initial prompt
-    prompt = context.prompt_sampler.build(parent_row, inspiration_rows)
-    initial_response, initial_response_time, initial_tokens = context.llm_instance.generate(prompt)
-    total_llm_time += initial_response_time
-    total_tokens += initial_tokens
-    
-    # Parse initial response to get explanation and code
-    explanation, code_section = parse_structured_response(initial_response)
-    if explanation is None or code_section is None:
-        raise ValueError("Invalid initial response")
-    
+    # Generate initial program
+    explanation, code_diff_section = generate_initial_response(context, parent_row, inspiration_rows, record)
+    if explanation is None or code_diff_section is None:
+        record.failure_type = "invalid_response"
+        record.error_message = "Invalid initial response from LLM"
+        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s", 
+                    current_gen, individual_id, record.failure_type, record.error_message)
+        record.generation_time = time.time() - generation_start_time
+        return record
+    record.explanation = explanation
+
     # Generate and evaluate with retries
-    retry_count = 0
-    score = None
-    error_message = "Unknown error"
-    current_program = parent_row["code"]
-    failure_type = None
-    
-    # Main retry loop
-    while retry_count <= context.max_retries:
+    for retry_count in range(context.max_retries + 1):        
         if retry_count > 0:
-            retry_prompt = context.prompt_sampler.build_retry_prompt(
-                current_program, error_message, failure_type or "unknown_error"
-            )
+            context.logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
+                        current_gen, individual_id, record.failure_type, retry_count, context.max_retries, record.  error_message)
             
-            response, response_time, response_tokens = context.llm_instance.generate(retry_prompt)
-            total_llm_time += response_time
-            total_tokens += response_tokens
-            
-            # Parse response to get new code
-            _, code_section = parse_structured_response(response)
-            if code_section is None:
-                # If no code found, break out of retry loop
-                failure_type = "invalid_response"
+            # Generate a retry response
+            code_diff_section = generate_retry_response(context, record)
+            if code_diff_section is None:
+                record.failure_type = "invalid_response"
+                record.error_message = "Invalid response from LLM"
                 break
         
         try:
-            # Apply the patch
-            child_program = context.patcher.apply_diff(current_program, code_section)
+            # Apply the patch to the code
+            record.code = context.patcher.apply_diff(record.code, code_diff_section)
             # Compile the new program to check for syntax errors
-            compile(child_program, "<candidate>", "exec")
-            # If the program compiles, update the current program
-            current_program = child_program
-            # Write to temp file for evaluator
+            compile(record.code, "<candidate>", "exec")
+            
+            # Write to temp file for evaluation
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=True) as tmp:
-                tmp.write(child_program)
+                tmp.write(record.code)
                 tmp.flush()
                 
                 # Run evaluation with timeout
                 score, execution_time, logs = context.problem.evaluate_with_timeout(tmp.name, context.evaluation_timeout)
-                total_evaluation_time += execution_time
-                
-            # Success - exit retry loop
-            failure_type = None
+            record.score = score
+            record.total_evaluation_time += execution_time
+            record.evaluation_logs = logs
+            record.failure_type = None
+            record.error_message = None
             break
-        except PatchError as e:
-            error_message = str(e)
-            failure_type = "patch_failure"
-        except SyntaxError as e:
-            error_message = f"Syntax error: {str(e)}"
-            failure_type = "syntax_error"
-        except TimeoutError:
-            error_message = f"Evaluation timed out after {context.evaluation_timeout} seconds"
-            failure_type = "timeout"
+            
         except Exception as e:
-            error_message = str(e)
-            failure_type = "runtime_error"
-        
-        if retry_count < context.max_retries:
-            retry_count += 1
-            context.logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
-                        current_gen, individual_id, failure_type, retry_count, context.max_retries, error_message)
-        else:
-            context.logger.debug("Gen %d, Individual %d: %s, ran out of retries: %s", 
-                        current_gen, individual_id, failure_type, error_message)
-            break
+            error_message, failure_type = handle_evaluation_error(e, context)
+            record.error_message = error_message
+            record.failure_type = failure_type
     
-    # Calculate total generation time
-    generation_time = time.time() - generation_start_time
+    record.retry_count = retry_count
+    record.conversation = context.llm_instance.get_conversation_json()
     
-    # Capture the full conversation history
-    conversation_json = context.llm_instance.get_conversation_json()
-    
-    # If the program failed to generate a valid score, return a ProgramRecord with the failure type
-    if score is None:
-        context.logger.debug("Gen %d, Individual %d: generation failed (%s), skipping", 
-                    current_gen, individual_id, failure_type or "unknown")
-        return ProgramRecord(
-            code=current_program,
-            explanation=explanation,
-            score=None,
-            gen=current_gen,
-            parent_id=parent_row["id"],
-            failure_type=failure_type or "generation_failure",
-            retry_count=retry_count,
-            total_evaluation_time=total_evaluation_time,  # Total evaluation time across all attempts
-            generation_time=generation_time,
-            total_llm_time=total_llm_time,
-            total_tokens=total_tokens,
-            conversation=conversation_json,
-            evaluation_logs=logs
-        )
+    # If the program failed to generate a valid score, return the record with failure type
+    if record.score is None:
+        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s", 
+                    current_gen, individual_id, record.failure_type, record.error_message)
+        record.generation_time = time.time() - generation_start_time
+        return record
 
     # Success - generate feedback for the successful program if enabled
-    feedback = None
     if cfg.evolution.enable_feedback:
-        feedback = generate_feedback(current_program, score, logs, context.llm_instance, cfg.problem_eval)
+        # Reset the conversation since we just want feedback on the final program
+        context.llm_instance.reset_conversation()
+        record.feedback = generate_feedback(record, context, cfg.problem_eval)
     
-    # Success - return a ProgramRecord with the score and total times
+    # Success - log and return the record
+    record.generation_time = time.time() - generation_start_time
     context.logger.debug("Gen %d, Individual %d: new score %.3f, total eval time %.2fs, generation time %.2fs, total LLM time %.2fs, total tokens %d", 
-                current_gen, individual_id, score, total_evaluation_time, generation_time, total_llm_time, total_tokens)
-    return ProgramRecord(
-        code=current_program,
-        explanation=explanation,
-        score=score,
-        gen=current_gen,
-        parent_id=parent_row["id"],
-        failure_type=None,
-        retry_count=retry_count,
-        total_evaluation_time=total_evaluation_time,  # Total evaluation time across all attempts
-        generation_time=generation_time,
-        total_llm_time=total_llm_time,
-        total_tokens=total_tokens,
-        conversation=conversation_json,
-        evaluation_logs=logs,
-        feedback=feedback
-    )
+                current_gen, individual_id, record.score, record.total_evaluation_time, 
+                record.generation_time, record.total_llm_time, record.total_tokens)
+    return record
