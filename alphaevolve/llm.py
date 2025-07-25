@@ -1,25 +1,42 @@
 import os
 import time
 import json
-from typing import List, cast, Tuple
-from openai import OpenAI
+import random
+from typing import List, cast
+from openai import NOT_GIVEN, OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
-from .config import LLMCfg
+from .config import LLMCfg, ModelCfg
 
 class LLMEngine:
-    """LLM engine with conversation management."""
+    """LLM engine with conversation management and internal metric tracking."""
     
     def __init__(self, llm_cfg: LLMCfg, client: OpenAI) -> None:
-        self.model = llm_cfg.model
+        self.llm_cfg = llm_cfg
         self.system_prompt = llm_cfg.system_prompt
-        self.temperature = llm_cfg.temperature
-        self.llm_timeout = llm_cfg.llm_timeout
         self.client = client
-            
+        self.selected_model: ModelCfg = None
+        
+        # Internal metric tracking
+        self._total_llm_time = 0.0
+        self._total_tokens = 0
+        
+        # Select initial model
+        self._select_model()
+        
+        # Initialize conversation with system prompt
         self.messages: List[ChatCompletionMessageParam] = [
             cast(ChatCompletionMessageParam, {"role": "system", "content": self.system_prompt})
         ]
+
+    def _select_model(self) -> None:
+        """Select a model based on probabilities."""
+        # Use random.choices with weights for simple weighted selection
+        self.selected_model = random.choices(
+            self.llm_cfg.models, 
+            weights=[model.probability for model in self.llm_cfg.models], 
+            k=1
+        )[0]
 
     def add_message(self, role: str, content: str) -> None:
         """Add a message to the conversation history."""
@@ -34,18 +51,31 @@ class LLMEngine:
         """Get the full conversation history as a JSON string."""
         return json.dumps(self.messages, indent=2)
 
-    def generate(self, prompt: str) -> Tuple[str, float, int]:
+    def get_metrics(self) -> tuple[float, int]:
+        """Get the total LLM time and tokens used."""
+        return self._total_llm_time, self._total_tokens
+
+    def reset_metrics(self) -> None:
+        """Reset the internal metrics."""
+        self._total_llm_time = 0.0
+        self._total_tokens = 0
+
+    def generate(self, prompt: str) -> str:
+        # Select a new model for each generation (optional - could be per call)
+        self._select_model()
+        
         # Add the user prompt to the conversation
         self.add_message("user", prompt)
         
         # Track response time
         start_time = time.time()
         response = self.client.chat.completions.create(
-            model=self.model,
+            model=self.selected_model.name,
             messages=self.messages,
-            temperature=self.temperature,
-            timeout=self.llm_timeout
+            temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN,
+            timeout=self.selected_model.llm_timeout
         )
+
         response_time = time.time() - start_time
         
         content = response.choices[0].message.content
@@ -54,11 +84,19 @@ class LLMEngine:
         usage = response.usage
         total_tokens = usage.total_tokens if usage else 0
         
+        # Update internal metrics
+        self._total_llm_time += response_time
+        self._total_tokens += total_tokens
+        
         # Add the assistant's response to the conversation
         if content:
             self.add_message("assistant", content)
         
-        return (content.strip() if content else "", response_time, total_tokens)
+        return content.strip() if content else ""
+    
+    def get_used_model(self) -> str:
+        """Get the name of the currently selected model."""
+        return self.selected_model.name
 
 
 def create_llm_client(llm_cfg: LLMCfg) -> OpenAI:

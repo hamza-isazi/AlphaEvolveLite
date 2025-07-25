@@ -8,6 +8,7 @@ from .log import init_logger
 from .config import Config, ConfigContext
 from .program_generator import generate_program
 from .db import ProgramRecord
+from .llm import LLMEngine
 
 
 class EvolutionController:
@@ -35,10 +36,11 @@ class EvolutionController:
         )
         # Generate feedback for the seed program if enabled
         if cfg.evolution.enable_feedback:
-            from .program_generator import create_program_generation_context, generate_feedback
-            seed_context = create_program_generation_context(cfg, self.logger, self.context.client)
-            seed_feedback = generate_feedback(seed_record, seed_context, cfg.problem_eval)
-            seed_record.feedback = seed_feedback
+            feedback_prompt = self.context.prompt_sampler.build_feedback_prompt(seed_record.code, seed_record.score, seed_record.evaluation_logs, cfg.problem_eval)
+            llm_instance = LLMEngine(cfg.llm, self.context.client)
+            seed_record.used_model = llm_instance.get_used_model()
+            seed_record.feedback = llm_instance.generate(feedback_prompt)
+            seed_record.total_llm_time, seed_record.total_tokens = llm_instance.get_metrics()
         self.context.database.add(seed_record)
         self.logger.info("Seed score %.3f", seed_score)
 

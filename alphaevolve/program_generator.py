@@ -42,11 +42,7 @@ def create_program_generation_context(cfg: Config, logger: logging.Logger, clien
 def generate_initial_response(context: ProgramGenerationContext, parent_row: dict, inspiration_rows: List[dict], record: ProgramRecord) -> Tuple[Optional[str], Optional[str]]:
     """Generate the initial response in the form of an explanation and a code diff section from parent and inspiration data."""
     prompt = context.prompt_sampler.build(parent_row, inspiration_rows)
-    initial_response, initial_response_time, initial_tokens = context.llm_instance.generate(prompt)
-    
-    # Update record metrics
-    record.total_llm_time += initial_response_time
-    record.total_tokens += initial_tokens
+    initial_response = context.llm_instance.generate(prompt)
     
     # Parse initial response to get explanation and code
     explanation, code_section = parse_structured_response(initial_response)
@@ -73,36 +69,11 @@ def generate_retry_response(context: ProgramGenerationContext, record: ProgramRe
         record.code, record.error_message, record.failure_type
     )
     
-    response, response_time, response_tokens = context.llm_instance.generate(retry_prompt)
-    record.total_llm_time += response_time
-    record.total_tokens += response_tokens
+    response = context.llm_instance.generate(retry_prompt)
     
     # Parse the retry response to get new code
     _, code_section = parse_structured_response(response)
     return code_section
-
-
-def generate_feedback(record: ProgramRecord, ctx: ProgramGenerationContext, evaluation_script_path: str = None) -> str:
-    """
-    Generate feedback for a program by asking for insights into why the program achieved its specific score.
-    
-    Args:
-        record: The program record
-        ctx: The program generation context
-        evaluation_script_path: Path to the evaluation script
-        
-    Returns:
-        Generated feedback as a string
-    """
-    # Create a prompt sampler to build the feedback prompt
-    feedback_prompt = ctx.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs, evaluation_script_path)
-    
-    # Generate feedback
-    feedback_response, response_time, response_tokens = ctx.llm_instance.generate(feedback_prompt)
-    record.total_llm_time += response_time
-    record.total_tokens += response_tokens
-    
-    return feedback_response.strip() if feedback_response else "No feedback generated."
 
 
 def generate_program(
@@ -135,7 +106,8 @@ def generate_program(
         explanation="",
         score=None,
         gen=current_gen,
-        parent_id=parent_row["id"]
+        parent_id=parent_row["id"],
+        used_model=context.llm_instance.get_used_model()
     )
     
     # Generate initial program
@@ -143,8 +115,8 @@ def generate_program(
     if explanation is None or code_diff_section is None:
         record.failure_type = "invalid_response"
         record.error_message = "Invalid initial response from LLM"
-        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s", 
-                    current_gen, individual_id, record.failure_type, record.error_message)
+        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s, model %s", 
+                    current_gen, individual_id, record.failure_type, record.error_message, record.used_model)
         record.generation_time = time.time() - generation_start_time
         return record
     record.explanation = explanation
@@ -192,8 +164,10 @@ def generate_program(
     
     # If the program failed to generate a valid score, return the record with failure type
     if record.score is None:
-        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s", 
-                    current_gen, individual_id, record.failure_type, record.error_message)
+        # Get metrics from LLM engine even for failed generations
+        record.total_llm_time, record.total_tokens = context.llm_instance.get_metrics()
+        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s, model %s", 
+                    current_gen, individual_id, record.failure_type, record.error_message, record.used_model)
         record.generation_time = time.time() - generation_start_time
         return record
 
@@ -201,11 +175,15 @@ def generate_program(
     if cfg.evolution.enable_feedback:
         # Reset the conversation since we just want feedback on the final program
         context.llm_instance.reset_conversation()
-        record.feedback = generate_feedback(record, context, cfg.problem_eval)
+        feedback_prompt = context.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs, cfg.problem_eval)
+        record.feedback = context.llm_instance.generate(feedback_prompt)
+    
+    # Get final metrics from LLM engine
+    record.total_llm_time, record.total_tokens = context.llm_instance.get_metrics()
     
     # Success - log and return the record
     record.generation_time = time.time() - generation_start_time
-    context.logger.debug("Gen %d, Individual %d: new score %.3f, total eval time %.2fs, generation time %.2fs, total LLM time %.2fs, total tokens %d", 
+    context.logger.debug("Gen %d, Individual %d: new score %.3f, total eval time %.2fs, generation time %.2fs, total LLM time %.2fs, total tokens %d, model %s", 
                 current_gen, individual_id, record.score, record.total_evaluation_time, 
-                record.generation_time, record.total_llm_time, record.total_tokens)
+                record.generation_time, record.total_llm_time, record.total_tokens, record.used_model)
     return record

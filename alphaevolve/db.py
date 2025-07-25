@@ -26,6 +26,7 @@ class ProgramRecord:
     conversation: Optional[str] = None  # JSON string containing full LLM conversation
     evaluation_logs: Optional[str] = None  # String containing evaluation logs
     feedback: Optional[str] = None  # String containing LLM-generated feedback
+    used_model: Optional[str] = None  # Name of the LLM model used for generation
     
     def to_insert_tuple(self, experiment_id: int) -> Tuple:
         """Convert to tuple for database insertion."""
@@ -33,7 +34,7 @@ class ProgramRecord:
             self.code, self.explanation, self.score, self.gen, 
             self.parent_id, experiment_id, self.failure_type, self.error_message, self.retry_count, 
             self.total_evaluation_time, self.generation_time, self.total_llm_time, self.total_tokens,
-            self.conversation, self.evaluation_logs, self.feedback
+            self.conversation, self.evaluation_logs, self.feedback, self.used_model
         )
 
 
@@ -79,6 +80,7 @@ class EvolutionaryDatabase:
                 conversation TEXT,
                 evaluation_logs TEXT,
                 feedback TEXT,
+                used_model TEXT,
                 FOREIGN KEY(experiment_id) REFERENCES experiments(id)
                      ON DELETE CASCADE
             );
@@ -117,8 +119,8 @@ class EvolutionaryDatabase:
         cur = self.conn.cursor()
         cur.execute(
             """
-            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, error_message, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation, evaluation_logs, feedback)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, error_message, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation, evaluation_logs, feedback, used_model)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             record.to_insert_tuple(self.experiment_id),
         )

@@ -1,15 +1,21 @@
 db_uri: sqlite:///alphaevolve.db
 
 experiment:
-  label: fib-baseline-v1        # human-readable tag
-  notes: "Fibonacci sanity run"
+  label: fib-multi-model-v1        # human-readable tag
+  notes: "Fibonacci sanity run with multiple models"
   save_top_k: 5               # number of top programs to save one completion of the experiment
 
 llm:
-  # provider: openai
-  # model: gpt-4o-mini          # or any model your key can access
   provider: gemini
-  model: gemini-2.5-flash     # or gemini-2.5-pro, etc.
+  models:
+    - name: gemini-2.5-flash
+      probability: 0.9
+      temperature: 0.8
+      llm_timeout: 60.0
+    - name: gemini-2.5-pro
+      probability: 0.1
+      temperature: 0.9
+      llm_timeout: 120.0
 
 evolution:
   population_size: 40

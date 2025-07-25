@@ -1,6 +1,7 @@
 from dataclasses import dataclass
 from pathlib import Path
 import yaml
+from typing import List, Optional
 
 
 @dataclass
@@ -11,12 +12,19 @@ class ExpCfg:
 
 
 @dataclass
+class ModelCfg:
+    """Configuration for a single model."""
+    name: str
+    probability: float
+    temperature: Optional[float] = None
+    llm_timeout: float = 120.0  # Timeout in seconds for LLM API calls
+
+
+@dataclass
 class LLMCfg:
     provider: str
-    model: str
-    temperature: float = 0.7
+    models: List[ModelCfg]
     system_prompt: str = "You are an expert software developer evolving Python code using diffs."
-    llm_timeout: float = 120.0  # Timeout in seconds for LLM API calls
 
 
 @dataclass
@@ -48,10 +56,19 @@ class Config:
 
     @classmethod
     def from_dict(cls, data: dict) -> "Config":
+        llm_data = data["llm"]
+        models = [ModelCfg(**model_data) for model_data in llm_data["models"]]
+        
+        llm_cfg = LLMCfg(
+            provider=llm_data["provider"],
+            models=models,
+            system_prompt=llm_data.get("system_prompt", "You are an expert software developer evolving Python code using diffs.")
+        )
+        
         return cls(
             db_uri=data["db_uri"],
             exp=ExpCfg(**data["experiment"]),
-            llm=LLMCfg(**data["llm"]),
+            llm=llm_cfg,
             evolution=EvolCfg(**data["evolution"]),
             problem_entry=data["problem"]["entry_script"],
             problem_eval=data["problem"]["evaluator"],

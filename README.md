@@ -127,27 +127,31 @@ The system provides two logging modes:
 
 ## LLM Providers
 
-AlphaEvolveLite supports multiple LLM providers through the `provider` field in the configuration:
+AlphaEvolveLite supports multiple LLM providers and models through the `provider` field in the configuration. You can configure multiple models with selection probabilities for each generation.
 
-### OpenAI
-```yaml
-llm:
-  provider: openai
-  model: gpt-4o-mini  # or gpt-4, gpt-3.5-turbo, etc.
-  temperature: 0.9
-```
+### Supported Providers
+
+#### OpenAI
 **Environment Variable**: `OPENAI_API_KEY`
+- `gpt-4o-mini`
+- `gpt-4o`
+- `gpt-4`
+- `gpt-3.5-turbo`
 
-### Google Gemini
-```yaml
-llm:
-  provider: gemini
-  model: gemini-2.5-flash  # or gemini-2.5-pro, gemini-1.5-flash, etc.
-  temperature: 0.9
-```
+#### Google Gemini
 **Environment Variable**: `GOOGLE_API_KEY`
+- `gemini-2.5-flash`
+- `gemini-2.5-pro`
+- `gemini-1.5-flash`
+- `gemini-1.5-pro`
 
 The Gemini integration uses the OpenAI-compatible API format provided by Google, making it seamless to switch between providers.
+
+### Model Selection
+For each generation, the system randomly selects a model based on the configured probabilities. This allows you to:
+- Use faster, cheaper models for most generations
+- Occasionally use more powerful models for complex problems
+- Balance cost and performance based on your needs
 
 ## Examples
 
@@ -180,10 +184,16 @@ experiment:
   save_top_k: 5
 
 llm:
-  provider: gemini
-  model: gemini-2.5-flash
-  temperature: 0.9
-  llm_timeout: 120
+  provider: openai
+  models:
+    - name: gpt-4o-mini
+      probability: 0.7
+      temperature: 0.9
+      llm_timeout: 120.0
+    - name: gpt-4o
+      probability: 0.3
+      temperature: 0.8
+      llm_timeout: 120.0
   system_prompt: |
     You are an expert software engineer solving the following challenge:
     [Your problem description here]
