@@ -2,6 +2,7 @@ import os
 import time
 import json
 import random
+import logging
 from typing import List, cast
 from openai import NOT_GIVEN, OpenAI
 from openai.types.chat import ChatCompletionMessageParam
@@ -11,12 +12,12 @@ from .config import LLMCfg, ModelCfg
 class LLMEngine:
     """LLM engine with conversation management and internal metric tracking."""
     
-    def __init__(self, llm_cfg: LLMCfg, client: OpenAI) -> None:
+    def __init__(self, llm_cfg: LLMCfg, client: OpenAI, logger: logging.Logger) -> None:
         self.llm_cfg = llm_cfg
         self.system_prompt = llm_cfg.system_prompt
         self.client = client
         self.selected_model: ModelCfg = None
-        
+        self.logger = logger
         # Internal metric tracking
         self._total_llm_time = 0.0
         self._total_tokens = 0
@@ -69,12 +70,16 @@ class LLMEngine:
         
         # Track response time
         start_time = time.time()
-        response = self.client.chat.completions.create(
-            model=self.selected_model.name,
-            messages=self.messages,
-            temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN,
-            timeout=self.selected_model.llm_timeout
-        )
+        try:
+            response = self.client.chat.completions.create(
+                model=self.selected_model.name,
+                messages=self.messages,
+                temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN,
+                timeout=self.selected_model.llm_timeout
+            )
+        except Exception as e:
+            self.logger.error(f"Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}")
+            raise
 
         response_time = time.time() - start_time
         

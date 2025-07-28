@@ -29,7 +29,7 @@ class ProgramGenerationContext:
 def create_program_generation_context(cfg: Config, logger: logging.Logger, client: OpenAI) -> ProgramGenerationContext:
     """Create a program generation context with all necessary dependencies."""    
     return ProgramGenerationContext(
-        llm_instance=LLMEngine(cfg.llm, client),
+        llm_instance=LLMEngine(cfg.llm, client, logger),
         patcher=PatchApplier(),
         problem=Problem(cfg.problem_entry, cfg.problem_eval),
         prompt_sampler=PromptSampler(None, enable_feedback=cfg.evolution.enable_feedback),  # No database needed for prompt building
