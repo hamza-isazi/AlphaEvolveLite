@@ -330,13 +330,15 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
         (token_gens, token_means, token_p10s, token_p90s, 'Total Tokens', 'Total Tokens (thousands)', False, None, 1/1000)
     ]
     
-    for i, (gens, means, p25s, p75s, title, ylabel, show_best, best_values, scale_factor) in enumerate(plots_data):
+    for i, (gens, means, p10s, p90s, title, ylabel, show_best, best_values, scale_factor) in enumerate(plots_data):
         if not gens:
             continue
             
         fig, ax = plt.subplots(figsize=(10, 6))
-        plot_with_percentiles(ax, gens, means, p25s, p75s, f"{title} - {experiment_label}", ylabel, 
+        plot_with_percentiles(ax, gens, means, p10s, p90s, f"{title} - {experiment_label}", ylabel, 
                             show_best=show_best, best_values=best_values, scale_factor=scale_factor)
+        
+        plt.tight_layout()
         
         if output_path:
             # Create individual output path
