@@ -1,8 +1,8 @@
 db_uri: sqlite:///alphaevolve.db
 
 experiment:
-  label: lru-cache-gemini        # human-readable tag
-  notes: "LRU cache optimisation experiment"
+  label: lru-cache-gemini-no-imports        # human-readable tag
+  notes: "LRU cache optimisation experiment with no imports"
   save_top_k: 5               # number of top programs to save one completion of the experiment
 
 llm:
@@ -30,9 +30,11 @@ llm:
     - get(key: int) -> int
     - put(key: int, value: int)
 
-    If the key is not present, get() should return -1. When inserting new keys beyond the cache’s capacity, the least recently used key should be evicted.
+    If the key is not present, get() should return -1. When inserting new keys beyond the cache's capacity, the least recently used key should be evicted.
 
-    The evolved code will be evaluated for performance using 100,000 mixed put/get operations on 10,000-capacity cache. Your solution will be judged based on runtime and memory usage. You may restructure the code freely and use any valid Python built-ins.
+    IMPORTANT: You are NOT allowed to use any import statements whatsoever. You must use only Python built-ins and standard library functions that are available without imports. Any import statements will cause the evaluation to fail.
+
+    The evolved code will be evaluated for performance using 100,000 mixed put/get operations on 10,000-capacity cache. Your solution will be judged based on runtime and memory usage. You may restructure the code freely and use any valid Python built-ins, but NO IMPORTS.
 
 evolution:
   population_size: 20

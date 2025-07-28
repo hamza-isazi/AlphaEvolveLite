@@ -7,7 +7,20 @@ import sys
 EXPECTED_OPS = 100_000
 CACHE_CAPACITY = 10_000
 
+def _check_for_imports(program_path: str):
+    """Check if the program contains any import statements and raise an error if found."""
+    with open(program_path, 'r') as f:
+        content = f.read()
+    
+    lines = content.split('\n')
+    for i, line in enumerate(lines, 1):
+        if "import" in line:
+            raise ValueError(f"Import statement found on line {i}: '{line.strip()}'. No imports are allowed in this experiment.")
+
 def _load_module(path: str):
+    # First check for imports (no imports allowed)
+    _check_for_imports(path)
+    
     spec = importlib.util.spec_from_file_location("candidate", path)
     mod = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
     assert spec and spec.loader
