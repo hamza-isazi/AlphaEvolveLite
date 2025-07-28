@@ -58,7 +58,105 @@ def get_experiment_data(db_path: str, experiment_id: int) -> list:
     return programs
 
 
-def create_visualization(programs: list, experiment_label: str, output_path: str | None = None):
+def group_data_by_generation(programs: list, key: str, filter_successful: bool = True):
+    """Helper function to group data by generation and calculate statistics."""
+    data_to_use = [p for p in programs if p['failure_type'] is None] if filter_successful else programs
+    
+    gen_to_values = {}
+    for p in data_to_use:
+        if p[key] is not None:  # Skip None values
+            gen = p['gen']
+            if gen not in gen_to_values:
+                gen_to_values[gen] = []
+            gen_to_values[gen].append(p[key])
+    
+    if not gen_to_values:
+        return [], [], [], [], []
+    
+    gens = sorted(gen_to_values.keys())
+    means = [np.mean(gen_to_values[gen]) for gen in gens]
+    p10s = [np.percentile(gen_to_values[gen], 10) for gen in gens]
+    p90s = [np.percentile(gen_to_values[gen], 90) for gen in gens]
+    
+    return gens, means, p10s, p90s, gen_to_values
+
+
+def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blue', 
+                         show_best=False, best_values=None, scale_factor=1.0):
+    """Helper function to create a plot with percentile shading and summary lines."""
+    # Apply scale factor if needed
+    means = [m * scale_factor for m in means]
+    p10s = [p * scale_factor for p in p10s]
+    p90s = [p * scale_factor for p in p90s]
+    
+    # Plot percentile shading
+    ax.fill_between(gens, p10s, p90s, alpha=0.3, color=color, label='10th-90th Percentile')
+    
+    # Plot mean line
+    ax.plot(gens, means, 'o-', linewidth=2, markersize=6, color='red', label='Mean')
+    
+    # Plot percentile boundary lines (without individual labels)
+    ax.plot(gens, p10s, '--', color=color, alpha=0.7)
+    ax.plot(gens, p90s, '--', color=color, alpha=0.7)
+    
+    # Plot best line if requested
+    if show_best and best_values:
+        best_values = [b * scale_factor for b in best_values]
+        ax.plot(gens, best_values, 'o-', linewidth=2, markersize=6, color='orange', label='Best')
+    
+    ax.set_xlabel('Generation')
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+
+
+def plot_success_failure_rates(ax, programs, failure_types):
+    """Helper function to plot success and failure rates per generation."""
+    # Group all programs by generation
+    gen_to_programs = {}
+    for p in programs:
+        gen = p['gen']
+        if gen not in gen_to_programs:
+            gen_to_programs[gen] = []
+        gen_to_programs[gen].append(p)
+    
+    all_gens = sorted(gen_to_programs.keys())
+    
+    # Calculate success rate per generation
+    success_rates = []
+    for gen in all_gens:
+        gen_programs = gen_to_programs[gen]
+        successful_count = sum(1 for p in gen_programs if p['failure_type'] is None)
+        success_rate = (successful_count / len(gen_programs)) * 100
+        success_rates.append(success_rate)
+    
+    # Plot success rate
+    ax.plot(all_gens, success_rates, 'o-', linewidth=2, markersize=6, color='green', label='Success Rate')
+    
+    # Calculate and plot failure rates for each failure type
+    colors = ['red', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
+    for i, failure_type in enumerate(failure_types):
+        failure_rates = []
+        for gen in all_gens:
+            gen_programs = gen_to_programs[gen]
+            failure_count = sum(1 for p in gen_programs if p['failure_type'] == failure_type)
+            failure_rate = (failure_count / len(gen_programs)) * 100
+            failure_rates.append(failure_rate)
+        
+        color = colors[i % len(colors)]
+        ax.plot(all_gens, failure_rates, 'o-', linewidth=2, markersize=4, color=color, label=f'{failure_type}')
+    
+    ax.set_xlabel('Generation')
+    ax.set_ylabel('Percentage (%)')
+    ax.set_title('Success and Failure Rates per Generation')
+    ax.grid(True, alpha=0.3)
+    ax.legend()
+    ax.set_ylim(0, 100)
+
+
+def create_visualization(programs: list, experiment_label: str, output_path: str | None = None, 
+                        show_individual: bool = True, show_combined: bool = True):
     """Create and save the visualization."""
     if not programs:
         print("No programs found for this experiment.")
@@ -97,126 +195,29 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     ax5 = fig.add_subplot(gs[3, 0])  # Fifth plot (bottom left)
     ax6 = fig.add_subplot(gs[3, 1])  # Sixth plot (bottom right)
     
-    # 1. Combined Score Analysis
-    # Group scores by generation
-    gen_to_scores = {}
-    for gen, score in zip(generations, scores):
-        if gen not in gen_to_scores:
-            gen_to_scores[gen] = []
-        gen_to_scores[gen].append(score)
-    
-    best_gens = sorted(gen_to_scores.keys())
-    best_scores = [max(gen_to_scores[gen]) for gen in best_gens]
-    avg_scores = [np.mean(gen_to_scores[gen]) for gen in best_gens]
-    
-    # Plot all scores as scatter
-    ax1.scatter(generations, scores, alpha=0.4, color='blue', label='All Scores')
-    
-    # Plot best scores line
-    ax1.plot(best_gens, best_scores, 'o-', color='red', label='Best Score')
-    
-    # Plot average scores line
-    ax1.plot(best_gens, avg_scores, 'o-', color='green', label='Average Score')
-    
-    ax1.set_xlabel('Generation')
-    ax1.set_ylabel('Score')
-    ax1.set_title('Score Evolution Analysis')
-    ax1.legend()
-    ax1.grid(True, alpha=0.3)
+    # 1. Score Analysis
+    score_gens, score_means, score_p10s, score_p90s, gen_to_scores = group_data_by_generation(programs, 'score')
+    if score_gens:
+        best_scores = [max(gen_to_scores[gen]) for gen in score_gens]
+        plot_with_percentiles(ax1, score_gens, score_means, score_p10s, score_p90s, 
+                            'Score Evolution with Percentiles', 'Score', 
+                            show_best=True, best_values=best_scores)
     
     # 2. Success and Failure Rates per Generation
+    plot_success_failure_rates(ax2, programs, failure_types)
     
-    # Group all programs by generation
-    gen_to_programs = {}
-    for p in programs:
-        gen = p['gen']
-        if gen not in gen_to_programs:
-            gen_to_programs[gen] = []
-        gen_to_programs[gen].append(p)
+    # 3. Retry count per generation with percentiles
+    retry_gens, retry_means, retry_p10s, retry_p90s, _ = group_data_by_generation(programs, 'retry_count', filter_successful=False)
+    if retry_gens:
+        plot_with_percentiles(ax3, retry_gens, retry_means, retry_p10s, retry_p90s, 
+                            'Retry Count with Percentiles', 'Retry Count')
     
-    all_gens = sorted(gen_to_programs.keys())
-    
-    # Calculate success rate per generation
-    success_rates = []
-    for gen in all_gens:
-        gen_programs = gen_to_programs[gen]
-        successful_count = sum(1 for p in gen_programs if p['failure_type'] is None)
-        success_rate = (successful_count / len(gen_programs)) * 100
-        success_rates.append(success_rate)
-    
-    # Plot success rate
-    ax2.plot(all_gens, success_rates, 'o-', linewidth=2, markersize=6, color='green', label='Success Rate')
-    
-    # Calculate and plot failure rates for each failure type
-    colors = ['red', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
-    for i, failure_type in enumerate(failure_types):
-        failure_rates = []
-        for gen in all_gens:
-            gen_programs = gen_to_programs[gen]
-            failure_count = sum(1 for p in gen_programs if p['failure_type'] == failure_type)
-            failure_rate = (failure_count / len(gen_programs)) * 100
-            failure_rates.append(failure_rate)
-        
-        color = colors[i % len(colors)]
-        ax2.plot(all_gens, failure_rates, 'o-', linewidth=2, markersize=4, color=color, label=f'{failure_type}')
-    
-    ax2.set_xlabel('Generation')
-    ax2.set_ylabel('Percentage (%)')
-    ax2.set_title('Success and Failure Rates per Generation')
-    ax2.grid(True, alpha=0.3)
-    ax2.legend()
-    ax2.set_ylim(0, 100)
-    
-    # 3. Average retry count per generation
-    retry_counts = [p['retry_count'] for p in programs]
-    gen_to_retries = {}
-    for gen, retries in zip(generations + [p['gen'] for p in failed_programs], retry_counts):
-        if gen not in gen_to_retries:
-            gen_to_retries[gen] = []
-        gen_to_retries[gen].append(retries)
-    
-    all_retry_gens = sorted(gen_to_retries.keys())
-    avg_retries = [np.mean(gen_to_retries[gen]) for gen in all_retry_gens]
-    
-    # Plot all retry counts as scatter
-    all_retry_gens_scatter = [p['gen'] for p in programs]
-    ax3.scatter(all_retry_gens_scatter, retry_counts, alpha=0.4, color='blue', label='All Retry Counts')
-    
-    # Plot average retry count line
-    ax3.plot(all_retry_gens, avg_retries, 'o-', linewidth=2, markersize=6, color='red', label='Average Retry Count')
-    
-    ax3.set_xlabel('Generation')
-    ax3.set_ylabel('Retry Count')
-    ax3.set_title('Retry Count per Generation')
-    ax3.legend()
-    ax3.grid(True, alpha=0.3)
-    
-    # 4. Average total tokens per generation
-    total_tokens_list = [p['total_tokens'] for p in programs if p['total_tokens'] is not None]
-    gen_to_tokens = {}
-    for p in programs:
-        if p['total_tokens'] is not None:
-            gen = p['gen']
-            if gen not in gen_to_tokens:
-                gen_to_tokens[gen] = []
-            gen_to_tokens[gen].append(p['total_tokens'])
-    
-    all_token_gens = sorted(gen_to_tokens.keys())
-    avg_tokens = [np.mean(gen_to_tokens[gen]) / 1000 for gen in all_token_gens]  # Convert to thousands
-    
-    # Plot all token counts as scatter
-    all_token_gens_scatter = [p['gen'] for p in programs if p['total_tokens'] is not None]
-    all_token_values_scatter = [p['total_tokens'] / 1000 for p in programs if p['total_tokens'] is not None]
-    ax4.scatter(all_token_gens_scatter, all_token_values_scatter, alpha=0.4, color='blue', label='All Token Counts')
-    
-    # Plot average token count line
-    ax4.plot(all_token_gens, avg_tokens, 'o-', linewidth=2, markersize=6, color='red', label='Average Token Count')
-    
-    ax4.set_xlabel('Generation')
-    ax4.set_ylabel('Total Tokens (thousands)')
-    ax4.set_title('Total Tokens per Generation')
-    ax4.legend()
-    ax4.grid(True, alpha=0.3)
+    # 4. Total tokens per generation with percentiles
+    token_gens, token_means, token_p10s, token_p90s, _ = group_data_by_generation(programs, 'total_tokens', filter_successful=False)
+    if token_gens:
+        plot_with_percentiles(ax4, token_gens, token_means, token_p10s, token_p90s, 
+                            'Total Tokens with Percentiles', 'Total Tokens (thousands)', 
+                            scale_factor=1/1000)  # Convert to thousands
     
     # 5. Time breakdown comparison (stacked bar chart)
     # Get all generations that have data for all time metrics
@@ -277,6 +278,10 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
         ax6.set_title('Distribution of Total Generation Times')
     
     # Add statistics text in dedicated space above plots
+    # Calculate statistics using the data we already have
+    total_tokens_list = [p['total_tokens'] for p in programs if p['total_tokens'] is not None]
+    generation_times = [p['generation_time'] for p in programs if p['generation_time'] is not None]
+    
     avg_total_tokens = np.mean(total_tokens_list) if total_tokens_list else 0
     avg_gen_time = np.mean(generation_times) if generation_times else 0
     
@@ -296,12 +301,53 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
                  transform=stats_ax.transAxes)
     
     # Gridspec handles spacing automatically
-    
     if output_path:
         plt.savefig(output_path, dpi=300, bbox_inches='tight')
-        print(f"Plot saved to: {output_path}")
+        print(f"Combined plot saved to: {output_path}")
     else:
         plt.show()
+    
+    # Create individual plots if requested
+    if show_individual:
+        create_individual_plots(programs, experiment_label, output_path)
+
+
+def create_individual_plots(programs: list, experiment_label: str, output_path: str | None = None):
+    """Create individual plots for each metric."""
+    if not programs:
+        return
+    
+    # Get data for each metric
+    score_gens, score_means, score_p10s, score_p90s, gen_to_scores = group_data_by_generation(programs, 'score')
+    retry_gens, retry_means, retry_p10s, retry_p90s, _ = group_data_by_generation(programs, 'retry_count', filter_successful=False)
+    token_gens, token_means, token_p10s, token_p90s, _ = group_data_by_generation(programs, 'total_tokens', filter_successful=False)
+    
+    # Create individual plots
+    plots_data = [
+        (score_gens, score_means, score_p10s, score_p90s, 'Score Evolution', 'Score', True, 
+         [max(gen_to_scores[gen]) for gen in score_gens] if score_gens else None, 1.0),
+        (retry_gens, retry_means, retry_p10s, retry_p90s, 'Retry Count', 'Retry Count', False, None, 1.0),
+        (token_gens, token_means, token_p10s, token_p90s, 'Total Tokens', 'Total Tokens (thousands)', False, None, 1/1000)
+    ]
+    
+    for i, (gens, means, p25s, p75s, title, ylabel, show_best, best_values, scale_factor) in enumerate(plots_data):
+        if not gens:
+            continue
+            
+        fig, ax = plt.subplots(figsize=(10, 6))
+        plot_with_percentiles(ax, gens, means, p25s, p75s, f"{title} - {experiment_label}", ylabel, 
+                            show_best=show_best, best_values=best_values, scale_factor=scale_factor)
+        
+        if output_path:
+            # Create individual output path
+            base_path = Path(output_path)
+            individual_path = base_path.parent / f"{base_path.stem}_{title.lower().replace(' ', '_')}{base_path.suffix}"
+            plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+            print(f"Individual plot saved to: {individual_path}")
+        else:
+            plt.show()
+        
+        plt.close()
 
 
 def main():
@@ -310,6 +356,8 @@ def main():
     parser.add_argument('--list-experiments', '-l', action='store_true', help='List all available experiments')
     parser.add_argument('--output', '-o', type=str, help='Output file path for the plot (e.g., plot.png)')
     parser.add_argument('--config', '-c', type=str, default='config.yml', help='Config file path')
+    parser.add_argument('--individual-only', action='store_true', help='Show only individual plots, not combined')
+    parser.add_argument('--combined-only', action='store_true', help='Show only combined plot, not individual')
     
     args = parser.parse_args()
     
@@ -385,8 +433,12 @@ def main():
         for failure_type, count in sorted(failure_counts.items()):
             print(f"  - {failure_type}: {count}")
     
+    # Determine what to show
+    show_individual = not args.combined_only
+    show_combined = not args.individual_only
+    
     # Create visualization
-    create_visualization(programs, experiment['label'], args.output)
+    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined)
 
 
 # Example usage:
