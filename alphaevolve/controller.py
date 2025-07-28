@@ -44,7 +44,7 @@ class EvolutionController:
         self.context.database.add(seed_record)
         self.logger.info("Seed score %.3f", seed_score)
 
-    def _log_generation_summary(self, gen: int, program_records: List[ProgramRecord]) -> None:
+    def _log_generation_summary(self, gen: int, population_size: int, program_records: List[ProgramRecord]) -> None:
         """Log summary statistics for a generation."""
         if not program_records:
             self.logger.info("=" * 60)
@@ -85,23 +85,22 @@ class EvolutionController:
         patch_failures = sum(1 for r in failed_records if r.failure_type == "patch_failure")
         invalid_response_failures = sum(1 for r in failed_records if r.failure_type == "invalid_response")
         
-        total_individuals = len(program_records)
         successful_individuals = len(successful_records)
-        success_rate = successful_individuals / total_individuals * 100 if total_individuals > 0 else 0.0
+        success_rate = successful_individuals / population_size * 100 if population_size > 0 else 0.0
         
         self.logger.info("=" * 60)
         self.logger.info("Generation %d Summary:", gen)
         self.logger.info("  Success Rate: %d/%d (%.1f%%)", 
-                        successful_individuals, total_individuals, success_rate)
+                        successful_individuals, population_size, success_rate)
         self.logger.info("  Fitness - Avg: %.3f, Best: %.3f", avg_fitness, best_fitness)
         self.logger.info("  Performance - Avg Retries: %.1f, Avg Total Eval Time: %.2fs, Avg Gen Time: %.2fs, Avg Total LLM Time: %.2fs, Avg Total Tokens: %.0f", 
                         avg_retries, avg_total_evaluation_time, avg_generation_time, avg_total_llm_time, avg_total_tokens)
         self.logger.info("  Failures - Syntax Errors: %d (%.1f%%), Evaluation: %d (%.1f%%), Timeouts: %d (%.1f%%), Patches: %d (%.1f%%), Invalid Responses: %d (%.1f%%)",
-                        syntax_errors, syntax_errors/total_individuals*100,
-                        evaluation_failures, evaluation_failures/total_individuals*100,
-                        timeouts, timeouts/total_individuals*100,
-                        patch_failures, patch_failures/total_individuals*100,
-                        invalid_response_failures, invalid_response_failures/total_individuals*100)
+                        syntax_errors, syntax_errors/population_size*100,
+                        evaluation_failures, evaluation_failures/population_size*100,
+                        timeouts, timeouts/population_size*100,
+                        patch_failures, patch_failures/population_size*100,
+                        invalid_response_failures, invalid_response_failures/population_size*100)
         self.logger.info("=" * 60)
 
     def run_generation(self, current_gen: int) -> int:
@@ -162,7 +161,7 @@ class EvolutionController:
                     pbar.update(1)
         
         # Log generation statistics
-        self._log_generation_summary(current_gen, program_records)
+        self._log_generation_summary(current_gen, population_size, program_records)
         
         self.logger.debug("Gen %d: Completed with %d/%d successful individuals", 
                         current_gen, successful_individuals, population_size)
