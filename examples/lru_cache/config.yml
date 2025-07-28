@@ -1,0 +1,48 @@
+db_uri: sqlite:///alphaevolve.db
+
+experiment:
+  label: lru-cache-gemini        # human-readable tag
+  notes: "LRU cache optimisation experiment"
+  save_top_k: 5               # number of top programs to save one completion of the experiment
+
+llm:
+  # provider: openai
+  # model: gpt-4o-mini          # or any model your key can access
+  provider: gemini
+  models:
+    - name: gemini-2.5-flash-lite
+      probability: 0.7
+      temperature: 0.9
+      llm_timeout: 30.0
+    - name: gemini-2.5-flash
+      probability: 0.2
+      temperature: 0.9
+      llm_timeout: 60.0
+    - name: gemini-2.5-pro
+      probability: 0.1
+      temperature: 0.9
+      llm_timeout: 120.0
+  system_prompt: |
+    Act as an expert software engineer. Your task is to improve the performance and efficiency of a Python implementation of an LRU (Least Recently Used) cache.
+
+    Your goal is to evolve the provided code to minimize total runtime and peak memory usage, while preserving correct functionality. The cache must support two operations:
+
+    - get(key: int) -> int
+    - put(key: int, value: int)
+
+    If the key is not present, get() should return -1. When inserting new keys beyond the cache’s capacity, the least recently used key should be evicted.
+
+    The evolved code will be evaluated for performance using 1 million mixed put/get operations on 100,000-capacity cache. Your solution will be judged based on runtime and memory usage. You may restructure the code freely and use any valid Python built-ins.
+
+evolution:
+  population_size: 40
+  temperature: 1.5
+  max_generations: 10
+  inspiration_count: 4        # number of inspirations to use in each generation
+  max_retries: 3              # number of retries for failed program generation
+  eval_timeout: 10.0    # timeout in seconds for evaluation runs (0 = no timeout)
+  enable_feedback: false       # Enable LLM-generated feedback for successful programs
+
+problem:
+  entry_script: examples/lru_cache/initial_program.py
+  evaluator:    examples/lru_cache/evaluate.py

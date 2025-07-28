@@ -12,9 +12,13 @@ llm:
   provider: gemini
   models:
     - name: gemini-2.5-flash-lite
-      probability: 0.9
+      probability: 0.7
       temperature: 0.9
       llm_timeout: 30.0
+    - name: gemini-2.5-flash
+      probability: 0.2
+      temperature: 0.9
+      llm_timeout: 60.0
     - name: gemini-2.5-pro
       probability: 0.1
       temperature: 0.9
@@ -54,11 +58,11 @@ llm:
 evolution:
   population_size: 40
   temperature: 1.5
-  max_generations: 5
+  max_generations: 10
   inspiration_count: 4        # number of inspirations to use in each generation
   max_retries: 3              # number of retries for failed program generation
   eval_timeout: 10.0    # timeout in seconds for evaluation runs (0 = no timeout)
-  enable_feedback: true       # Enable LLM-generated feedback for successful programs
+  enable_feedback: false       # Enable LLM-generated feedback for successful programs
 
 problem:
   entry_script: examples/book_scanning/initial_program.py
