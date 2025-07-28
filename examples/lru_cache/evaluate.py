@@ -4,8 +4,8 @@ import time
 import random
 import sys
 
-EXPECTED_OPS = 1_000_000
-CACHE_CAPACITY = 100_000
+EXPECTED_OPS = 100_000
+CACHE_CAPACITY = 10_000
 
 def _load_module(path: str):
     spec = importlib.util.spec_from_file_location("candidate", path)
@@ -46,7 +46,7 @@ def evaluate(program_path: str) -> dict:
         "score": score,
     }
 
-    return score_dict
+    return score_dict["score"]
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

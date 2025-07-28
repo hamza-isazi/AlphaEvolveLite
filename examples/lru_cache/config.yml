@@ -32,12 +32,12 @@ llm:
 
     If the key is not present, get() should return -1. When inserting new keys beyond the cache’s capacity, the least recently used key should be evicted.
 
-    The evolved code will be evaluated for performance using 1 million mixed put/get operations on 100,000-capacity cache. Your solution will be judged based on runtime and memory usage. You may restructure the code freely and use any valid Python built-ins.
+    The evolved code will be evaluated for performance using 100,000 mixed put/get operations on 10,000-capacity cache. Your solution will be judged based on runtime and memory usage. You may restructure the code freely and use any valid Python built-ins.
 
 evolution:
-  population_size: 40
+  population_size: 20
   temperature: 1.5
-  max_generations: 10
+  max_generations: 20
   inspiration_count: 4        # number of inspirations to use in each generation
   max_retries: 3              # number of retries for failed program generation
   eval_timeout: 10.0    # timeout in seconds for evaluation runs (0 = no timeout)
