@@ -70,9 +70,8 @@ def evaluate(program_path: str) -> dict:
     capacity = CACHE_CAPACITY
     keys = [random.randint(0, capacity * 2) for _ in range(ops)]
 
-    cache = LRUCache(capacity)
-
     tracemalloc.start()
+    cache = LRUCache(capacity)
     start = time.perf_counter()
 
     for i, k in enumerate(keys):
