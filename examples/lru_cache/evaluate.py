@@ -90,10 +90,10 @@ def evaluate(program_path: str) -> dict:
     score_dict = {
         "latency_sec": runtime,
         "peak_memory_mb": peak_mb,
-        "score": score,
+        "combined_score": score,
     }
 
-    return score_dict["score"]
+    return score_dict["combined_score"]
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:
