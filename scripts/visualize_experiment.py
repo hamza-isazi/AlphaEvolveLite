@@ -93,7 +93,7 @@ def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blu
     ax.fill_between(gens, p10s, p90s, alpha=0.3, color=color, label='10th-90th Percentile')
     
     # Plot mean line
-    ax.plot(gens, means, 'o-', linewidth=2, markersize=6, color='red', label='Mean')
+    ax.plot(gens, means, '-', linewidth=2, color='red', label='Mean')
     
     # Plot percentile boundary lines (without individual labels)
     ax.plot(gens, p10s, '--', color=color, alpha=0.7)
@@ -102,7 +102,7 @@ def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blu
     # Plot best line if requested
     if show_best and best_values:
         best_values = [b * scale_factor for b in best_values]
-        ax.plot(gens, best_values, 'o-', linewidth=2, markersize=6, color='orange', label='Best')
+        ax.plot(gens, best_values, '-', linewidth=2, color='orange', label='Best')
     
     ax.set_xlabel('Generation')
     ax.set_ylabel(ylabel)
@@ -132,7 +132,7 @@ def plot_success_failure_rates(ax, programs, failure_types):
         success_rates.append(success_rate)
     
     # Plot success rate
-    ax.plot(all_gens, success_rates, 'o-', linewidth=2, markersize=6, color='green', label='Success Rate')
+    ax.plot(all_gens, success_rates, '-', linewidth=2, color='green', label='Success Rate')
     
     # Calculate and plot failure rates for each failure type
     colors = ['red', 'orange', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan']
@@ -145,7 +145,7 @@ def plot_success_failure_rates(ax, programs, failure_types):
             failure_rates.append(failure_rate)
         
         color = colors[i % len(colors)]
-        ax.plot(all_gens, failure_rates, 'o-', linewidth=2, markersize=4, color=color, label=f'{failure_type}')
+        ax.plot(all_gens, failure_rates, '-', linewidth=2, color=color, label=f'{failure_type}')
     
     ax.set_xlabel('Generation')
     ax.set_ylabel('Percentage (%)')
@@ -322,15 +322,35 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
     retry_gens, retry_means, retry_p10s, retry_p90s, _ = group_data_by_generation(programs, 'retry_count', filter_successful=False)
     token_gens, token_means, token_p10s, token_p90s, _ = group_data_by_generation(programs, 'total_tokens', filter_successful=False)
     
-    # Create individual plots
+    # Get failure types for success/failure rate plot
+    failed_programs = [p for p in programs if p['failure_type'] is not None]
+    failure_types = set()
+    for p in failed_programs:
+        if p['failure_type'] is not None:
+            failure_types.add(p['failure_type'])
+    failure_types = sorted(list(failure_types))
+    
+    # Get time data for time breakdown plot
+    gen_to_times = {}
+    for p in programs:
+        if p['generation_time'] is not None and p['total_evaluation_time'] is not None and p['total_llm_time'] is not None:
+            gen = p['gen']
+            if gen not in gen_to_times:
+                gen_to_times[gen] = {'gen_times': [], 'eval_times': [], 'llm_times': []}
+            gen_to_times[gen]['gen_times'].append(p['generation_time'])
+            gen_to_times[gen]['eval_times'].append(p['total_evaluation_time'])
+            gen_to_times[gen]['llm_times'].append(p['total_llm_time'])
+    
+    # Create individual plots for all metrics
     plots_data = [
         (score_gens, score_means, score_p10s, score_p90s, 'Score Evolution', 'Score', True, 
-         [max(gen_to_scores[gen]) for gen in score_gens] if score_gens else None, 1.0),
-        (retry_gens, retry_means, retry_p10s, retry_p90s, 'Retry Count', 'Retry Count', False, None, 1.0),
-        (token_gens, token_means, token_p10s, token_p90s, 'Total Tokens', 'Total Tokens (thousands)', False, None, 1/1000)
+         [max(gen_to_scores[gen]) for gen in score_gens] if score_gens else None, 1.0, 'score_evolution'),
+        (retry_gens, retry_means, retry_p10s, retry_p90s, 'Retry Count', 'Retry Count', False, None, 1.0, 'retry_count'),
+        (token_gens, token_means, token_p10s, token_p90s, 'Total Tokens', 'Total Tokens (thousands)', False, None, 1/1000, 'total_tokens'),
     ]
     
-    for i, (gens, means, p10s, p90s, title, ylabel, show_best, best_values, scale_factor) in enumerate(plots_data):
+    # Create individual plots for percentile-based metrics
+    for i, (gens, means, p10s, p90s, title, ylabel, show_best, best_values, scale_factor, plot_id) in enumerate(plots_data):
         if not gens:
             continue
             
@@ -343,7 +363,89 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
         if output_path:
             # Create individual output path
             base_path = Path(output_path)
-            individual_path = base_path.parent / f"{base_path.stem}_{title.lower().replace(' ', '_')}{base_path.suffix}"
+            individual_path = base_path.parent / f"{base_path.stem}_{plot_id}{base_path.suffix}"
+            plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+            print(f"Individual plot saved to: {individual_path}")
+        else:
+            plt.show()
+        
+        plt.close()
+    
+    # Create individual success/failure rate plot
+    if failure_types:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        plot_success_failure_rates(ax, programs, failure_types)
+        ax.set_title(f"Success and Failure Rates - {experiment_label}")
+        
+        plt.tight_layout()
+        
+        if output_path:
+            base_path = Path(output_path)
+            individual_path = base_path.parent / f"{base_path.stem}_success_failure_rates{base_path.suffix}"
+            plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+            print(f"Individual plot saved to: {individual_path}")
+        else:
+            plt.show()
+        
+        plt.close()
+    
+    # Create individual time breakdown plot
+    if gen_to_times:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        all_gens = sorted(gen_to_times.keys())
+        avg_gen_times = [np.mean(gen_to_times[gen]['gen_times']) for gen in all_gens]
+        avg_eval_times = [np.mean(gen_to_times[gen]['eval_times']) for gen in all_gens]
+        avg_llm_times = [np.mean(gen_to_times[gen]['llm_times']) for gen in all_gens]
+        
+        # Calculate "other" time (generation time minus evaluation and LLM time)
+        other_times = [gen_time - eval_time - llm_time for gen_time, eval_time, llm_time in zip(avg_gen_times, avg_eval_times, avg_llm_times)]
+        
+        x = range(len(all_gens))
+        ax.bar(x, avg_eval_times, label='Total Evaluation Time', color='orange', alpha=0.7)
+        ax.bar(x, avg_llm_times, bottom=avg_eval_times, label='Total LLM Time', color='purple', alpha=0.7)
+        ax.bar(x, other_times, bottom=[e+l for e, l in zip(avg_eval_times, avg_llm_times)], label='Other Time', color='gray', alpha=0.7)
+        
+        ax.set_xlabel('Generation')
+        ax.set_ylabel('Time (s)')
+        ax.set_title(f'Generation Time Breakdown - {experiment_label}')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        ax.set_xticks(x)
+        ax.set_xticklabels(all_gens)
+        
+        plt.tight_layout()
+        
+        if output_path:
+            base_path = Path(output_path)
+            individual_path = base_path.parent / f"{base_path.stem}_time_breakdown{base_path.suffix}"
+            plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+            print(f"Individual plot saved to: {individual_path}")
+        else:
+            plt.show()
+        
+        plt.close()
+    
+    # Create individual generation time distribution plot
+    generation_times = [p['generation_time'] for p in programs if p['generation_time'] is not None]
+    
+    if generation_times:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        
+        ax.hist(generation_times, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+        ax.axvline(np.mean(generation_times), color='red', linestyle='--', linewidth=2, label=f'Mean: {np.mean(generation_times):.2f}s')
+        ax.axvline(np.median(generation_times), color='orange', linestyle='--', linewidth=2, label=f'Median: {np.median(generation_times):.2f}s')
+        ax.set_xlabel('Generation Time (s)')
+        ax.set_ylabel('Frequency')
+        ax.set_title(f'Distribution of Total Generation Times - {experiment_label}')
+        ax.legend()
+        ax.grid(True, alpha=0.3)
+        
+        plt.tight_layout()
+        
+        if output_path:
+            base_path = Path(output_path)
+            individual_path = base_path.parent / f"{base_path.stem}_generation_time_distribution{base_path.suffix}"
             plt.savefig(individual_path, dpi=300, bbox_inches='tight')
             print(f"Individual plot saved to: {individual_path}")
         else:
