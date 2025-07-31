@@ -153,6 +153,17 @@ For each generation, the system randomly selects a model based on the configured
 - Occasionally use more powerful models for complex problems
 - Balance cost and performance based on your needs
 
+### Retry Model Configuration
+You can specify a dedicated model for retries and feedback using the `retry_model` parameter:
+- **Retries**: When initial program generation fails, the system uses the retry model to generate improved versions
+- **Feedback**: For successful programs, the retry model generates feedback to help guide future evolution
+- **Fallback**: If no retry model is specified, the system uses the normal model selection logic
+
+This is useful for:
+- Using more capable models for error correction and feedback
+- Reducing costs by using cheaper models for initial generation
+- Ensuring high-quality feedback from the most capable available model
+
 ## Examples
 
 ### Fibonacci Sequence
@@ -194,6 +205,7 @@ llm:
       probability: 0.3
       temperature: 0.8
       llm_timeout: 120.0
+  retry_model: gpt-4o  # Use more capable model for retries and feedback
   system_prompt: |
     You are an expert software engineer solving the following challenge:
     [Your problem description here]

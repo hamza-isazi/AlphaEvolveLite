@@ -25,6 +25,7 @@ class LLMCfg:
     provider: str
     models: List[ModelCfg]
     system_prompt: str = "You are an expert software developer evolving Python code using diffs."
+    retry_model: Optional[str] = None  # Model name to use for retries and feedback (if None, uses same model selection logic)
 
 
 @dataclass
@@ -62,7 +63,8 @@ class Config:
         llm_cfg = LLMCfg(
             provider=llm_data["provider"],
             models=models,
-            system_prompt=llm_data.get("system_prompt", "You are an expert software developer evolving Python code using diffs.")
+            system_prompt=llm_data.get("system_prompt", "You are an expert software developer evolving Python code using diffs."),
+            retry_model=llm_data.get("retry_model")
         )
         
         return cls(

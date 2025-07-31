@@ -65,6 +65,9 @@ def handle_evaluation_error(error: Exception, context: ProgramGenerationContext)
 def generate_retry_response(context: ProgramGenerationContext, record: ProgramRecord) -> Optional[str]:
     """Generate a retry response when initial generation fails.
     This is a response to the error message and failure type, and is used to generate a new code diff section."""
+    # Select retry model before generating response
+    context.llm_instance.select_retry_model()
+    
     retry_prompt = context.prompt_sampler.build_retry_prompt(
         record.code, record.error_message, record.failure_type
     )
@@ -175,6 +178,8 @@ def generate_program(
     if cfg.evolution.enable_feedback:
         # Reset the conversation since we just want feedback on the final program
         context.llm_instance.reset_conversation()
+        # Select retry model for feedback generation
+        context.llm_instance.select_retry_model()
         feedback_prompt = context.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs, cfg.problem_eval)
         record.feedback = context.llm_instance.generate(feedback_prompt)
     

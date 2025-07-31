@@ -39,6 +39,20 @@ class LLMEngine:
             k=1
         )[0]
 
+    def select_retry_model(self) -> None:
+        """Select a model specifically for retries and feedback, also removes temperature if specified.
+        If retry_model is specified in config, use that model."""
+        
+        if self.llm_cfg.retry_model:
+            for model in self.llm_cfg.models:
+                if model.name == self.llm_cfg.retry_model:
+                    self.selected_model = model
+                    self.selected_model.temperature = None
+                    return
+            self.logger.warning(f"Retry model '{self.llm_cfg.retry_model}' not found in available models, keeping current model")
+        else:
+            self.selected_model.temperature = None
+
     def add_message(self, role: str, content: str) -> None:
         """Add a message to the conversation history."""
         message = cast(ChatCompletionMessageParam, {"role": role, "content": content})
