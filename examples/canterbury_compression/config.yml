@@ -1,0 +1,54 @@
+db_uri: sqlite:///alphaevolve.db
+
+experiment:
+  label: canterbury-compression-gemini-no-imports
+  notes: "Canterbury corpus compression experiment with no imports"
+  save_top_k: 5               # number of top programs to save one completion of the experiment
+
+llm:
+  # provider: openai
+  # model: gpt-4o-mini          # or any model your key can access
+  provider: gemini
+  models:
+    - name: gemini-2.5-flash-lite
+      probability: 0.7
+      temperature: 0.9
+      llm_timeout: 60.0
+    - name: gemini-2.5-flash
+      probability: 0.2
+      temperature: 0.9
+      llm_timeout: 180.0
+    - name: gemini-2.5-pro
+      probability: 0.1
+      temperature: 0.9
+      llm_timeout: 300.0
+  system_prompt: |
+    You are tasked with implementing a Python text compression algorithm.
+    Your program must define two functions:
+
+        def compress(text: str) -> bytes
+        def decompress(data: bytes) -> str
+
+    The goal is to minimize the size of the compressed data while ensuring perfect reversibility. Your solution will be evaluated on the Canterbury Corpus, a benchmark dataset containing a variety of file types (e.g., English text, code, spreadsheets).
+
+    Constraints:
+    - Your solution must not use any external libraries.
+    - The `compress()` and `decompress()` functions must be defined in a single file called `solution.py`.
+    - Compression must be lossless.
+    - You may only use the standard Python library.
+    - Your solution must run within 60 seconds on each corpus file.
+
+    Your program will be evaluated using a score of `1.0 / total_compressed_size_in_bytes`, summed across all corpus files. Smaller total size = higher score.
+
+evolution:
+  population_size: 20
+  temperature: 1.5
+  max_generations: 100
+  inspiration_count: 4        # number of inspirations to use in each generation
+  max_retries: 3              # number of retries for failed program generation
+  eval_timeout: 10.0    # timeout in seconds for evaluation runs (0 = no timeout)
+  enable_feedback: false       # Enable LLM-generated feedback for successful programs
+
+problem:
+  entry_script: examples/canterbury_compression/initial_program.py
+  evaluator:    examples/canterbury_compression/evaluate.py
