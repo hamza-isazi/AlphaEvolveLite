@@ -81,6 +81,25 @@ def group_data_by_generation(programs: list, key: str, filter_successful: bool =
     return gens, means, p10s, p90s, gen_to_values
 
 
+def configure_y_axis(ax):
+    """Helper function to ensure top y-tick is visible on all plots."""
+    ax.yaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    ax.yaxis.set_major_formatter(plt.ScalarFormatter(useOffset=False))
+    # Force matplotlib to show the top tick
+    ax.yaxis.set_ticks_position('both')
+    ax.tick_params(axis='y', which='both', direction='in')
+
+
+def setup_plot_common(ax, xlabel, ylabel, title, show_grid=True):
+    """Helper function to set up common plot elements."""
+    ax.set_xlabel(xlabel)
+    ax.set_ylabel(ylabel)
+    ax.set_title(title)
+    if show_grid:
+        ax.grid(True, alpha=0.3)
+    configure_y_axis(ax)
+
+
 def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blue', 
                          show_best=False, best_values=None, scale_factor=1.0):
     """Helper function to create a plot with percentile shading and summary lines."""
@@ -104,11 +123,8 @@ def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blu
         best_values = [b * scale_factor for b in best_values]
         ax.plot(gens, best_values, '-', linewidth=2, color='orange', label='Best')
     
-    ax.set_xlabel('Generation')
-    ax.set_ylabel(ylabel)
-    ax.set_title(title)
+    setup_plot_common(ax, 'Generation', ylabel, title)
     ax.legend()
-    ax.grid(True, alpha=0.3)
 
 
 def plot_success_failure_rates(ax, programs, failure_types):
@@ -147,12 +163,48 @@ def plot_success_failure_rates(ax, programs, failure_types):
         color = colors[i % len(colors)]
         ax.plot(all_gens, failure_rates, '-', linewidth=2, color=color, label=f'{failure_type}')
     
-    ax.set_xlabel('Generation')
-    ax.set_ylabel('Percentage (%)')
-    ax.set_title('Success and Failure Rates per Generation')
-    ax.grid(True, alpha=0.3)
+    setup_plot_common(ax, 'Generation', 'Percentage (%)', 'Success and Failure Rates per Generation')
     ax.legend()
     ax.set_ylim(0, 100)
+
+
+def plot_time_breakdown(ax, gen_to_times, title):
+    """Helper function to create time breakdown stacked bar chart."""
+    if not gen_to_times:
+        ax.text(0.5, 0.5, 'No complete time data\navailable', ha='center', va='center', transform=ax.transAxes)
+        ax.set_title(title)
+        return
+    
+    all_gens = sorted(gen_to_times.keys())
+    avg_gen_times = [np.mean(gen_to_times[gen]['gen_times']) for gen in all_gens]
+    avg_eval_times = [np.mean(gen_to_times[gen]['eval_times']) for gen in all_gens]
+    avg_llm_times = [np.mean(gen_to_times[gen]['llm_times']) for gen in all_gens]
+    
+    # Calculate "other" time (generation time minus evaluation and LLM time)
+    other_times = [gen_time - eval_time - llm_time for gen_time, eval_time, llm_time in zip(avg_gen_times, avg_eval_times, avg_llm_times)]
+    
+    x = range(len(all_gens))
+    ax.bar(x, avg_eval_times, label='Total Evaluation Time', color='orange', alpha=0.7)
+    ax.bar(x, avg_llm_times, bottom=avg_eval_times, label='Total LLM Time', color='purple', alpha=0.7)
+    ax.bar(x, other_times, bottom=[e+l for e, l in zip(avg_eval_times, avg_llm_times)], label='Other Time', color='gray', alpha=0.7)
+    
+    setup_plot_common(ax, 'Generation', 'Time (s)', title)
+    ax.legend()
+
+
+def plot_generation_time_distribution(ax, generation_times, title):
+    """Helper function to create generation time distribution histogram."""
+    if not generation_times:
+        ax.text(0.5, 0.5, 'No generation time data\navailable', ha='center', va='center', transform=ax.transAxes)
+        ax.set_title(title)
+        return
+    
+    ax.hist(generation_times, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
+    ax.axvline(np.mean(generation_times), color='red', linestyle='--', linewidth=2, label=f'Mean: {np.mean(generation_times):.2f}s')
+    ax.axvline(np.median(generation_times), color='orange', linestyle='--', linewidth=2, label=f'Median: {np.median(generation_times):.2f}s')
+    
+    setup_plot_common(ax, 'Generation Time (s)', 'Frequency', title)
+    ax.legend()
 
 
 def create_visualization(programs: list, experiment_label: str, output_path: str | None = None, 
@@ -220,11 +272,6 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
                             scale_factor=1/1000)  # Convert to thousands
     
     # 5. Time breakdown comparison (stacked bar chart)
-    # Get all generations that have data for all time metrics
-    generation_times = [p['generation_time'] for p in programs if p['generation_time'] is not None]
-    total_evaluation_times = [p['total_evaluation_time'] for p in programs if p['total_evaluation_time'] is not None]
-    total_llm_times = [p['total_llm_time'] for p in programs if p['total_llm_time'] is not None]
-    
     # Group by generation
     gen_to_times = {}
     for p in programs:
@@ -236,46 +283,11 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
             gen_to_times[gen]['eval_times'].append(p['total_evaluation_time'])
             gen_to_times[gen]['llm_times'].append(p['total_llm_time'])
     
-    if gen_to_times:
-        all_gens = sorted(gen_to_times.keys())
-        avg_gen_times = [np.mean(gen_to_times[gen]['gen_times']) for gen in all_gens]
-        avg_eval_times = [np.mean(gen_to_times[gen]['eval_times']) for gen in all_gens]
-        avg_llm_times = [np.mean(gen_to_times[gen]['llm_times']) for gen in all_gens]
-        
-        # Calculate "other" time (generation time minus evaluation and LLM time)
-        other_times = [gen_time - eval_time - llm_time for gen_time, eval_time, llm_time in zip(avg_gen_times, avg_eval_times, avg_llm_times)]
-        
-        x = range(len(all_gens))
-        ax5.bar(x, avg_eval_times, label='Total Evaluation Time', color='orange', alpha=0.7)
-        ax5.bar(x, avg_llm_times, bottom=avg_eval_times, label='Total LLM Time', color='purple', alpha=0.7)
-        ax5.bar(x, other_times, bottom=[e+l for e, l in zip(avg_eval_times, avg_llm_times)], label='Other Time', color='gray', alpha=0.7)
-        
-        ax5.set_xlabel('Generation')
-        ax5.set_ylabel('Time (s)')
-        ax5.set_title('Generation Time Breakdown')
-        ax5.legend()
-        ax5.grid(True, alpha=0.3)
-        ax5.set_xticks(x)
-        ax5.set_xticklabels(all_gens)
-    else:
-        ax5.text(0.5, 0.5, 'No complete time data\navailable', ha='center', va='center', transform=ax5.transAxes)
-        ax5.set_title('Generation Time Breakdown')
+    plot_time_breakdown(ax5, gen_to_times, 'Generation Time Breakdown')
     
     # 6. Distribution of Total Generation Times
     generation_times = [p['generation_time'] for p in programs if p['generation_time'] is not None]
-    
-    if generation_times:
-        ax6.hist(generation_times, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
-        ax6.axvline(np.mean(generation_times), color='red', linestyle='--', linewidth=2, label=f'Mean: {np.mean(generation_times):.2f}s')
-        ax6.axvline(np.median(generation_times), color='orange', linestyle='--', linewidth=2, label=f'Median: {np.median(generation_times):.2f}s')
-        ax6.set_xlabel('Generation Time (s)')
-        ax6.set_ylabel('Frequency')
-        ax6.set_title('Distribution of Total Generation Times')
-        ax6.legend()
-        ax6.grid(True, alpha=0.3)
-    else:
-        ax6.text(0.5, 0.5, 'No generation time data\navailable', ha='center', va='center', transform=ax6.transAxes)
-        ax6.set_title('Distribution of Total Generation Times')
+    plot_generation_time_distribution(ax6, generation_times, 'Distribution of Total Generation Times')
     
     # Add statistics text in dedicated space above plots
     # Calculate statistics using the data we already have
@@ -392,27 +404,7 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
     # Create individual time breakdown plot
     if gen_to_times:
         fig, ax = plt.subplots(figsize=(10, 6))
-        
-        all_gens = sorted(gen_to_times.keys())
-        avg_gen_times = [np.mean(gen_to_times[gen]['gen_times']) for gen in all_gens]
-        avg_eval_times = [np.mean(gen_to_times[gen]['eval_times']) for gen in all_gens]
-        avg_llm_times = [np.mean(gen_to_times[gen]['llm_times']) for gen in all_gens]
-        
-        # Calculate "other" time (generation time minus evaluation and LLM time)
-        other_times = [gen_time - eval_time - llm_time for gen_time, eval_time, llm_time in zip(avg_gen_times, avg_eval_times, avg_llm_times)]
-        
-        x = range(len(all_gens))
-        ax.bar(x, avg_eval_times, label='Total Evaluation Time', color='orange', alpha=0.7)
-        ax.bar(x, avg_llm_times, bottom=avg_eval_times, label='Total LLM Time', color='purple', alpha=0.7)
-        ax.bar(x, other_times, bottom=[e+l for e, l in zip(avg_eval_times, avg_llm_times)], label='Other Time', color='gray', alpha=0.7)
-        
-        ax.set_xlabel('Generation')
-        ax.set_ylabel('Time (s)')
-        ax.set_title(f'Generation Time Breakdown - {experiment_label}')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
-        ax.set_xticks(x)
-        ax.set_xticklabels(all_gens)
+        plot_time_breakdown(ax, gen_to_times, f'Generation Time Breakdown - {experiment_label}')
         
         plt.tight_layout()
         
@@ -431,15 +423,7 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
     
     if generation_times:
         fig, ax = plt.subplots(figsize=(10, 6))
-        
-        ax.hist(generation_times, bins=20, alpha=0.7, color='skyblue', edgecolor='black')
-        ax.axvline(np.mean(generation_times), color='red', linestyle='--', linewidth=2, label=f'Mean: {np.mean(generation_times):.2f}s')
-        ax.axvline(np.median(generation_times), color='orange', linestyle='--', linewidth=2, label=f'Median: {np.median(generation_times):.2f}s')
-        ax.set_xlabel('Generation Time (s)')
-        ax.set_ylabel('Frequency')
-        ax.set_title(f'Distribution of Total Generation Times - {experiment_label}')
-        ax.legend()
-        ax.grid(True, alpha=0.3)
+        plot_generation_time_distribution(ax, generation_times, f'Distribution of Total Generation Times - {experiment_label}')
         
         plt.tight_layout()
         
