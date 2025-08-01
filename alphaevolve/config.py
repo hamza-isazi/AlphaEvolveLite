@@ -3,7 +3,6 @@ from pathlib import Path
 import yaml
 from typing import List, Optional
 
-
 @dataclass
 class ExpCfg:
     label: str
@@ -37,6 +36,9 @@ class EvolCfg:
     max_retries: int = 3   # Number of retries for failed program generation
     eval_timeout: float = 60.0  # Timeout in seconds for evaluation runs
     enable_feedback: bool = True  # Enable LLM-generated feedback for successful programs
+    recent_generations: int = 5  # Number of recent generations to consider for inspiration selection
+    recent_percentile: float = 10.0  # Percentile threshold for recent generation selection (0-100)
+    selection_method: str = "enhanced_inspiration"  # Method for inspiration selection: "boltzmann", "top_k_and_random", or "enhanced_inspiration"
 
 
 @dataclass
@@ -76,55 +78,3 @@ class Config:
             problem_eval=data["problem"]["evaluator"],
             debug=data.get("debug", False),  # Default to False if not specified
         )
-
-
-class ConfigContext:
-    """Context object that provides centralized access to configuration and common dependencies."""
-    
-    def __init__(self, cfg: Config):
-        self.cfg = cfg
-        self._database = None
-        self._problem = None
-        self._prompt_sampler = None
-        self._patcher = None
-        self._client = None
-    
-    @property
-    def database(self):
-        """Lazy initialization of database connection."""
-        if self._database is None:
-            from .db import EvolutionaryDatabase
-            self._database = EvolutionaryDatabase(self.cfg)
-        return self._database
-    
-    @property
-    def problem(self):
-        """Lazy initialization of problem evaluator."""
-        if self._problem is None:
-            from .problem import Problem
-            self._problem = Problem(self.cfg.problem_entry, self.cfg.problem_eval)
-        return self._problem
-    
-    @property
-    def prompt_sampler(self):
-        """Lazy initialization of prompt sampler."""
-        if self._prompt_sampler is None:
-            from .prompts import PromptSampler
-            self._prompt_sampler = PromptSampler(self.database, enable_feedback=self.cfg.evolution.enable_feedback)
-        return self._prompt_sampler
-    
-    @property
-    def patcher(self):
-        """Lazy initialization of patch applier."""
-        if self._patcher is None:
-            from .patcher import PatchApplier
-            self._patcher = PatchApplier()
-        return self._patcher
-
-    @property
-    def client(self):
-        """Lazy initialization of LLM client."""
-        if self._client is None:
-            from .llm import create_llm_client
-            self._client = create_llm_client(self.cfg.llm)
-        return self._client

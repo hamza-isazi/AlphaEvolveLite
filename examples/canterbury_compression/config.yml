@@ -1,7 +1,7 @@
 db_uri: sqlite:///alphaevolve.db
 
 experiment:
-  label: canterbury-compression-gemini-no-imports
+  label: canterbury-compression-gemini-enhanced-selection
   notes: "Canterbury corpus compression experiment with no imports"
   save_top_k: 5               # number of top programs to save one completion of the experiment
 
@@ -22,6 +22,7 @@ llm:
       probability: 0.1
       temperature: 0.9
       llm_timeout: 300.0
+  # retry_model: gemini-2.5-flash
   system_prompt: |
     You are tasked with implementing a Python text compression algorithm.
     Your program must define two functions:
@@ -36,7 +37,6 @@ llm:
     - The `compress()` and `decompress()` functions must be defined in a single file called `solution.py`.
     - Compression must be lossless.
     - You may only use the standard Python library.
-    - Your solution must run within 60 seconds on each corpus file.
 
     Your program will be evaluated using a score of `1.0 / total_compressed_size_in_bytes`, summed across all corpus files. Smaller total size = higher score.
 

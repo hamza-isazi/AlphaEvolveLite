@@ -4,12 +4,27 @@ import concurrent.futures
 from typing import List
 from tqdm import tqdm
 import statistics
+import logging
 from .log import init_logger
-from .config import Config, ConfigContext
+from .config import Config
 from .program_generator import generate_program
-from .db import ProgramRecord
-from .llm import LLMEngine
+from .db import EvolutionaryDatabase, ProgramRecord
+from .llm import LLMEngine, create_llm_client
+from .problem import Problem
+from .prompts import PromptSampler
+from .patcher import PatchApplier
 
+class ControllerContext:
+    """Context object that provides centralized access to configuration and common dependencies."""
+    
+    def __init__(self, cfg: Config, logger: logging.Logger):
+        self.cfg = cfg
+        self.logger = logger        
+        self.database = EvolutionaryDatabase(self.cfg)
+        self.problem = Problem(self.cfg.problem_entry, self.cfg.problem_eval)
+        self.prompt_sampler = PromptSampler(self.database, enable_feedback=self.cfg.evolution.enable_feedback)
+        self.patcher = PatchApplier()
+        self.client = create_llm_client(self.cfg.llm)
 
 class EvolutionController:
     """
@@ -18,10 +33,10 @@ class EvolutionController:
     
     def __init__(self, cfg: Config):
         self.cfg = cfg
-        self.context = ConfigContext(cfg)
         self.logger = init_logger(debug=cfg.debug)
         self.logger.info("Connected to database at %s", cfg.db_uri)
-        
+        self.context = ControllerContext(cfg, self.logger)
+
         # Seed archive with original solution
         seed_code = Path(cfg.problem_entry).read_text()
         seed_score, seed_execution_time, seed_logs = self.context.problem.evaluate_with_timeout(cfg.problem_entry, cfg.evolution.eval_timeout) 
@@ -169,15 +184,20 @@ class EvolutionController:
 
     def run_evolution(self):
         total_successful = 0
-        
+        best_score = -float('inf')
         self.logger.info("Starting evolution with %d generations, population size %d", 
                         self.cfg.evolution.max_generations, self.cfg.evolution.population_size)
         
         for gen in range(1, self.cfg.evolution.max_generations + 1):
             successful = self.run_generation(gen)
             total_successful += successful
-            
-            if successful == 0:
+            if successful > 0:
+                gen_best_score = self.context.database.top_k(1)[0]["score"]
+                if gen_best_score > best_score:
+                    # Log the improvement in best score
+                    self.logger.info("Best score improved by %.3f! New best: %.3f", gen_best_score - best_score, gen_best_score)
+                    best_score = gen_best_score
+            else:
                 self.logger.warning("Gen %d: no successful individuals generated, continuing to next generation", gen)
         
         self.logger.info("Evolution complete. Final generation: %d, Total successful individuals: %d", 
