@@ -184,7 +184,7 @@ class EvolutionController:
 
     def run_evolution(self):
         total_successful = 0
-        best_score = -float('inf')
+        best_score = self.context.database.top_k(1)[0]["score"]
         self.logger.info("Starting evolution with %d generations, population size %d", 
                         self.cfg.evolution.max_generations, self.cfg.evolution.population_size)
         
