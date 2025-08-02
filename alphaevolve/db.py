@@ -197,15 +197,17 @@ class EvolutionaryDatabase:
         selected = random.choices(programs, weights=probabilities, k=1)[0]
         return selected
 
-    def _boltzmann_select_multiple(self, n: int, exclude_id: Optional[int] = None) -> List[dict]:
+    def _boltzmann_select_from_pool(self, programs: List[dict], n: int, exclude_id: Optional[int] = None) -> List[dict]:
         """
-        Select multiple programs using Boltzmann selection from the most recent generation.
+        Select multiple programs using Boltzmann selection from a given pool of programs.
         
         The probability of selecting a program is proportional to exp(score / temperature).
         Higher scores and lower temperatures make selection more deterministic.
         
         Parameters
         ----------
+        programs : List[dict]
+            Pool of programs to select from.
         n : int
             Number of programs to select.
         exclude_id : Optional[int]
@@ -219,7 +221,49 @@ class EvolutionaryDatabase:
         Raises
         ------
         RuntimeError
-            If no programs exist in the database.
+            If no programs exist in the pool.
+        """
+        if not programs:
+            raise RuntimeError("No programs in the provided pool")
+        
+        # Filter out excluded program if specified
+        if exclude_id is not None:
+            programs = [p for p in programs if p["id"] != exclude_id]
+            
+        # If no programs remain after filtering, return empty list
+        if not programs:
+            return []
+        
+        # Calculate Boltzmann weights
+        temperature = self.cfg.evolution.temperature
+        scores = [program["score"] for program in programs]
+        max_score = max(scores)
+        weights = [
+            math.exp((score - max_score) / temperature)
+            for score in scores
+        ]
+        total_weight = sum(weights)
+        probabilities = [w / total_weight for w in weights]
+        
+        # Select based on probabilities (without replacement)
+        selected = random.choices(programs, weights=probabilities, k=min(n, len(programs)))
+        return selected
+
+    def _boltzmann_select_parent_and_inspirations(self, num_inspirations: int) -> Tuple[dict, List[dict]]:
+        """
+        Select a parent and inspirations using Boltzmann selection from the current generation.
+        
+        Parameters
+        ----------
+        num_inspirations : int
+            Number of inspirations to select.
+            
+        Returns
+        -------
+        parent : dict
+            Selected parent program.
+        inspirations : List[dict]
+            Selected inspiration programs (excluding parent).
         """
         # Get current generation
         current_gen = self.get_current_generation()
@@ -238,28 +282,11 @@ class EvolutionaryDatabase:
         if not programs:
             raise RuntimeError(f"No programs in generation {current_gen}")
         
-        # Filter out excluded program if specified
-        if exclude_id is not None:
-            programs = [p for p in programs if p["id"] != exclude_id]
-            
-        # In the first generation, there is only one program, so we need to return an empty list
-        if not programs:
-            return []
+        # Select parent and inspirations from the same pool
+        parent = self._boltzmann_select_from_pool(programs, 1)[0]
+        inspirations = self._boltzmann_select_from_pool(programs, num_inspirations, exclude_id=parent["id"])
         
-        # Calculate Boltzmann weights
-        temperature = self.cfg.evolution.temperature
-        scores = [program["score"] for program in programs]
-        max_score = max(scores)
-        weights = [
-            math.exp((score - max_score) / temperature)
-            for score in scores
-        ]
-        total_weight = sum(weights)
-        probabilities = [w / total_weight for w in weights]
-        
-        # Select based on probabilities (without replacement)
-        selected = random.choices(programs, weights=probabilities, k=min(n, len(programs)))
-        return selected
+        return parent, inspirations
 
     def top_k(self, k: int) -> List[dict]:
         """
@@ -369,7 +396,7 @@ class EvolutionaryDatabase:
     def sample(self) -> Tuple[dict, List[dict]]:
         """
         Pick a single parent row to mutate and a list of inspiration rows
-        for prompt context. Inspirations are selected using the specified method.
+        for prompt context. Parent and inspirations are selected using the specified method.
 
         Returns
         -------
@@ -378,93 +405,118 @@ class EvolutionaryDatabase:
         inspirations : List[dict]
             Additional rows (≠ parent) to include in the prompt.
         """
-        # 1. ----- parent selection ------------------------------------------
-        try:
-            parent = self._boltzmann_select()
-        except RuntimeError:           # archive empty ⇒ caller should seed first row
-            raise
-        except Exception:              # safety net – fall back to pure random choice
-            parent = self.random_n(1)[0]
-
-        # 2. ----- inspiration selection -------------------------------------
-        num_inspirations = self.cfg.evolution.inspiration_count
         selection_method = self.cfg.evolution.selection_method
+        num_inspirations = self.cfg.evolution.inspiration_count
+        
         if selection_method == "boltzmann":
-            # Use Boltzmann selection for inspirations, excluding the parent
-            inspirations = self._boltzmann_select_multiple(num_inspirations, exclude_id=parent["id"])
-        elif selection_method == "top_k_and_random": # Use a mix of top-k and random selection
-            half = num_inspirations // 2
-            # a) strongest half (top-k but skip parent)
-            strong = [row for row in self.top_k(num_inspirations + 1) if row["id"] != parent["id"]][:half]
-
-            # b) diverse half (uniform random, also skip parent & already-chosen rows)
-            diverse_pool = [row for row in self.random_n(num_inspirations * 2)
-                            if row["id"] != parent["id"]
-                            and row["id"] not in {r["id"] for r in strong}]
-            diverse = random.sample(diverse_pool, min(num_inspirations - len(strong), len(diverse_pool)))
-
-            inspirations = strong + diverse
-            random.shuffle(inspirations)   # avoid positional bias in the prompt
+            # Use Boltzmann selection for both parent and inspirations from current generation
+            parent, inspirations = self._boltzmann_select_parent_and_inspirations(num_inspirations)
+        elif selection_method == "top_k_and_random":
+            # Use a mix of top-k and random selection
+            parent, inspirations = self._top_k_and_random_select_parent_and_inspirations(num_inspirations)
         elif selection_method == "enhanced_inspiration":
-            # New enhanced inspiration selection method
-            inspirations = self._enhanced_inspiration_selection(num_inspirations, parent["id"])
+            # Enhanced inspiration selection from combined pool
+            parent, inspirations = self._enhanced_inspiration_select_parent_and_inspirations(num_inspirations)
         else:
             raise ValueError(f"Invalid selection method: {selection_method}")
 
         return parent, inspirations
 
-    def _enhanced_inspiration_selection(self, num_inspirations: int, exclude_parent_id: int) -> List[dict]:
+    def _top_k_and_random_select_parent_and_inspirations(self, num_inspirations: int) -> Tuple[dict, List[dict]]:
         """
-        Enhanced inspiration selection with the new logic:
-        - Half from top-k all-time pool
-        - Half from recent generations above percentile threshold
-        - Fallback to random selection until both pools are >= k
+        Select a parent and inspirations using a mix of top-k and random selection.
+        
+        Parameters
+        ----------
+        num_inspirations : int
+            Number of inspirations to select.
+            
+        Returns
+        -------
+        parent : dict
+            Selected parent program.
+        inspirations : List[dict]
+            Selected inspiration programs (excluding parent).
+        """
+        # Select parent from top-k programs
+        top_k_programs = self.top_k(num_inspirations + 1)
+        if not top_k_programs:
+            raise RuntimeError("No programs available for selection")
+        
+        parent = random.choice(top_k_programs)
+        
+        # Select inspirations using the original top_k_and_random logic
+        half = num_inspirations // 2
+        
+        # a) strongest half (top-k but skip parent)
+        strong = [row for row in self.top_k(num_inspirations + 1) if row["id"] != parent["id"]][:half]
+
+        # b) diverse half (uniform random, also skip parent & already-chosen rows)
+        diverse_pool = [row for row in self.random_n(num_inspirations * 2)
+                        if row["id"] != parent["id"]
+                        and row["id"] not in {r["id"] for r in strong}]
+        diverse = random.sample(diverse_pool, min(num_inspirations - len(strong), len(diverse_pool)))
+
+        inspirations = strong + diverse
+        random.shuffle(inspirations)   # avoid positional bias in the prompt
+        
+        return parent, inspirations
+
+
+    def _enhanced_inspiration_select_parent_and_inspirations(self, num_inspirations: int) -> Tuple[dict, List[dict]]:
+        """
+        Select a parent and inspirations using Boltzmann sampling from a combined pool:
+        - Combines top-k all-time pool and recent generations above percentile threshold
+        - Uses Boltzmann selection from the combined pool for both parent and inspirations
+        - Fallback to random selection if combined pool is insufficient
         
         Parameters
         ----------
         num_inspirations : int
             Number of inspirations to select
-        exclude_parent_id : int
-            ID of parent program to exclude
             
         Returns
         -------
+        parent : dict
+            Selected parent program.
         inspirations : List[dict]
-            Selected inspiration programs
+            Selected inspiration programs (excluding parent).
         """
         # Elites pool is the top-k all-time pool, default is double the population
         k = self.cfg.evolution.population_size * 2
-        half = num_inspirations // 2
         
-        # Get top-k all-time programs (excluding parent)
-        top_k_pool = [p for p in self.top_k(k + 1) if p["id"] != exclude_parent_id]
+        # Get top-k all-time programs
+        top_k_pool = self.top_k(k + 1)
         
-        # Get recent generations programs (excluding parent and top-k pool)
+        # Get recent generations programs (excluding top-k pool)
         recent_generations = self.cfg.evolution.recent_generations
         recent_percentile = self.cfg.evolution.recent_percentile
         
-        exclude_ids = {exclude_parent_id} | {p["id"] for p in top_k_pool}
+        exclude_ids = {p["id"] for p in top_k_pool}
         recent_programs = self.get_recent_generations_programs(recent_generations, exclude_ids)
         
         # Filter recent programs by percentile
         filtered_recent_pool = self.get_percentile_programs(recent_programs, recent_percentile)
         
-        # Check if both pools are sufficient size (>= k), if so, select half from each
-        if len(top_k_pool) >= k and len(filtered_recent_pool) >= k:
-            # Both pools are sufficient - select half from each
-            top_k_selected = random.sample(top_k_pool, half)
-            recent_selected = random.sample(filtered_recent_pool, half)
-            
-            inspirations = top_k_selected + recent_selected
-        # If the top-k pool is sufficient size, select all inspirations from the top-k pool (top-k pool gets filled first)
-        elif len(top_k_pool) >= k:
-            inspirations = random.sample(top_k_pool, num_inspirations)
-            print(f"Selected {len(inspirations)} inspirations from top-k pool")
-        # Otherwise, fall back to full random sampling
-        else:
-            print(f"Not enough programs in top-k pool or recent generations pool to select {num_inspirations} inspirations. Falling back to full random sampling.")
-            inspirations = self.random_n(num_inspirations)
+        # Combine the pools
+        combined_pool = top_k_pool + filtered_recent_pool
+        
+        # Use Boltzmann selection from the combined pool for both parent and inspirations
+        try:
+            # Select parent first
+            parent = self._boltzmann_select_from_pool(combined_pool, 1)[0]
+            # Then select inspirations, excluding the parent
+            inspirations = self._boltzmann_select_from_pool(combined_pool, num_inspirations, exclude_id=parent["id"])
+            # print(f"Selected parent and {len(inspirations)} inspirations using Boltzmann selection from combined pool (top-k: {len(top_k_pool)}, recent: {len(filtered_recent_pool)})")
+        except RuntimeError:
+            # Fallback to random selection if combined pool is insufficient
+            print(f"Combined pool insufficient for parent and {num_inspirations} inspirations. Falling back to random selection.")
+            all_programs = self.random_n(num_inspirations + 1)
+            if not all_programs:
+                raise RuntimeError("No programs available for selection")
+            parent = all_programs[0]
+            inspirations = all_programs[1:]
         
         # Shuffle to avoid positional bias in the prompt
         random.shuffle(inspirations)
-        return inspirations
+        return parent, inspirations

@@ -11,8 +11,8 @@ TEMPLATE = """\
 
     # Prior programs
 
-    Previously we found that the following programs performed well
-    on the task at hand. Each includes the developer's explanation of their improvements and feedback:
+    The following programs represent the current best performers on this task.
+    Each includes the developer's explanation of their improvements and feedback:
 
     {inspirations}
 
@@ -24,13 +24,22 @@ TEMPLATE = """\
     {parent}
 
     # Task
-    Suggest improvements to the program that will lead to better performance on the specified metrics.
+    Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above.
+    
+    Do not aim to match the performance of the best program - aim to exceed it.
+    Look for opportunities to combine the best ideas from multiple prior programs while adding novel improvements.
+    Consider edge cases, optimizations, and alternative approaches that the prior programs may have missed.
+    
+    **TARGET TO BEAT: Score {target_score:.3f}**
+    
+    Suggest improvements that will lead to significantly better performance than any existing program.
 
     # Response Format
     Your response MUST follow this exact structure:
 
     ### Explanation
-    Briefly describe what you changed, why it helps, and what effect it's expected to have. Keep it under 3 sentences. 
+    Briefly describe what you changed, why it helps, and how it will outperform the prior programs. Keep it under 3 sentences. 
+    Focus on the specific improvements that will achieve better performance than any of the inspiration programs.
     Do not restate or refer to the current program. Avoid implementation details already visible in the code diff.
 
     ### Code
@@ -142,7 +151,8 @@ class PromptSampler:
             explanation = r.get('explanation', 'No explanation provided')
             feedback = r.get('feedback')
             
-            program_text = f"Score {r['score']:.3f}:\nExplanation: {explanation}\n```\n{r['code']}\n```"
+            # Make the score more prominent
+            program_text = f"**Score: {r['score']:.3f}**\nExplanation: {explanation}\n```\n{r['code']}\n```"
             
             if include_feedback and feedback:
                 program_text += f"\n\nFeedback:\n{feedback}"
@@ -168,10 +178,17 @@ class PromptSampler:
         # Choose evolve instructions based on whether evolve blocks are present
         evolve_instructions = EVOLVE_INSTRUCTIONS if self._has_evolve_blocks(parent_row['code']) else FREE_INSTRUCTIONS
         
+        # Calculate the target score to beat (including parent score)
+        all_scores = [parent_row['score']]
+        if inspiration_rows:
+            all_scores.extend(r['score'] for r in inspiration_rows)
+        target_score = max(all_scores)
+        
         prompt = TEMPLATE.format(
             parent=self._format_rows([parent_row], include_feedback=self.enable_feedback),
             inspirations=self._format_rows(inspiration_rows, include_feedback=self.enable_feedback) if inspiration_rows else "None yet.",
-            evolve_instructions=evolve_instructions
+            evolve_instructions=evolve_instructions,
+            target_score=target_score
         )
         return prompt
 
