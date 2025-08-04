@@ -4,6 +4,7 @@ An open source simplified implementation of the AlphaEvolve evolutionary coding 
 ## Features
 
 - **Evolutionary Program Generation**: Uses LLM-based mutation and selection to improve code
+- **Tabu Search Integration**: Combines improvement and fundamentally different approaches to escape local optima
 - **Full Conversation Storage**: Stores complete LLM conversation history for each generated program
 - **Multiple LLM Providers**: Support for OpenAI and Google Gemini APIs
 - **Flexible Evaluation**: Custom evaluation functions for any programming problem
@@ -164,6 +165,22 @@ This is useful for:
 - Reducing costs by using cheaper models for initial generation
 - Ensuring high-quality feedback from the most capable available model
 
+### Tabu Search Configuration
+AlphaEvolveLite implements a tabu search inspired approach to program generation that helps escape local optima:
+
+- **Improvement Mode** (default): The LLM tries to improve upon existing programs by combining the best ideas and adding novel improvements
+- **Tabu Search Mode**: The LLM is instructed to take a fundamentally different approach, treating prior programs as "taboo" and exploring alternative algorithms, data structures, or problem-solving paradigms
+
+The `tabu_search_probability` parameter controls the probability of using tabu search mode vs improvement mode for each program generation:
+- `0.0`: Always use improvement mode (traditional evolution)
+- `0.5`: 50% chance of each mode (balanced exploration/exploitation)
+- `1.0`: Always use tabu search mode (maximum exploration)
+
+This feature is particularly useful for:
+- Escaping local optima when evolution gets stuck
+- Exploring diverse solution approaches
+- Balancing between incremental improvements and radical innovations
+
 ## Examples
 
 ### Fibonacci Sequence
@@ -217,6 +234,7 @@ evolution:
   inspiration_count: 3
   max_retries: 3
   eval_timeout: 60.0
+  tabu_search_probability: 0.5  # Probability of using tabu search vs improvement approach
 
 problem:
   entry_script: path/to/your/solution.py

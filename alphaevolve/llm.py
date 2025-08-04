@@ -8,6 +8,7 @@ from openai import NOT_GIVEN, OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from .config import LLMCfg, ModelCfg
+from .utils import timeout
 
 class LLMEngine:
     """LLM engine with conversation management and internal metric tracking."""
@@ -75,27 +76,20 @@ class LLMEngine:
         self._total_llm_time = 0.0
         self._total_tokens = 0
 
-    def generate(self, prompt: str) -> str:
+    def _generate_internal(self, prompt: str) -> str:
+        """Internal method that performs the actual LLM generation."""
         # Select a new model for each generation (optional - could be per call)
         self._select_model()
         
         # Add the user prompt to the conversation
         self.add_message("user", prompt)
         
-        # Track response time
-        start_time = time.time()
-        try:
-            response = self.client.chat.completions.create(
-                model=self.selected_model.name,
-                messages=self.messages,
-                temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN,
-                timeout=self.selected_model.llm_timeout
-            )
-        except Exception as e:
-            self.logger.error(f"Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}")
-            raise
-
-        response_time = time.time() - start_time
+        # Make the API call
+        response = self.client.chat.completions.create(
+            model=self.selected_model.name,
+            messages=self.messages,
+            temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN
+        )
         
         content = response.choices[0].message.content
         
@@ -103,15 +97,38 @@ class LLMEngine:
         usage = response.usage
         total_tokens = usage.total_tokens if usage else 0
         
-        # Update internal metrics
-        self._total_llm_time += response_time
-        self._total_tokens += total_tokens
-        
         # Add the assistant's response to the conversation
         if content:
             self.add_message("assistant", content)
         
-        return content.strip() if content else ""
+        return content.strip() if content else "", total_tokens
+
+    def generate(self, prompt: str) -> str:
+        """Generate a response from the LLM with timeout handling."""
+        # Track response time
+        start_time = time.time()
+        
+        try:
+            # Use the timeout decorator to wrap the generation
+            # (OpenAI's built-in timeout param does not work correctly)
+            timeout_func = timeout(
+                self.selected_model.llm_timeout, 
+                f"LLM generation timed out after {self.selected_model.llm_timeout} seconds"
+            )(self._generate_internal)
+            
+            content, total_tokens = timeout_func(prompt)
+            
+        except Exception as e:
+            self.logger.error(f"Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
+            raise e
+
+        response_time = time.time() - start_time
+        
+        # Update internal metrics
+        self._total_llm_time += response_time
+        self._total_tokens += total_tokens
+        
+        return content
     
     def get_used_model(self) -> str:
         """Get the name of the currently selected model."""

@@ -30,6 +30,7 @@ evolution:
   selection_method: enhanced_inspiration  # Method: "boltzmann", "top_k_and_random", or "enhanced_inspiration"
   recent_generations: 5       # Number of recent generations to consider for inspiration selection
   recent_percentile: 10.0     # Percentile threshold for recent generation selection (0-100)
+  tabu_search_probability: 0.5  # Probability of using tabu search (fundamentally new approach) vs improvement
 
 problem:
   entry_script: examples/fibonacci/solution.py

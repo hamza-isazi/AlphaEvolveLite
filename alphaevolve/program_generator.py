@@ -1,6 +1,7 @@
 import tempfile
 import logging
 import time
+import random
 from concurrent.futures import TimeoutError
 from typing import List, Tuple, Optional
 from dataclasses import dataclass
@@ -39,9 +40,9 @@ def create_program_generation_context(cfg: Config, logger: logging.Logger, clien
     )
 
 
-def generate_initial_response(context: ProgramGenerationContext, parent_row: dict, inspiration_rows: List[dict], record: ProgramRecord) -> Tuple[Optional[str], Optional[str]]:
+def generate_initial_response(context: ProgramGenerationContext, parent_row: dict, inspiration_rows: List[dict], record: ProgramRecord, use_tabu_search: bool = False) -> Tuple[Optional[str], Optional[str]]:
     """Generate the initial response in the form of an explanation and a code diff section from parent and inspiration data."""
-    prompt = context.prompt_sampler.build(parent_row, inspiration_rows)
+    prompt = context.prompt_sampler.build(parent_row, inspiration_rows, use_tabu_search=use_tabu_search)
     initial_response = context.llm_instance.generate(prompt)
     
     # Parse initial response to get explanation and code
@@ -50,14 +51,14 @@ def generate_initial_response(context: ProgramGenerationContext, parent_row: dic
     return explanation, code_section
 
 
-def handle_evaluation_error(error: Exception, context: ProgramGenerationContext) -> Tuple[str, str]:
-    """Handle evaluation errors and return error message and failure type."""
+def handle_program_generation_error(error: Exception) -> Tuple[str, str]:
+    """Handle program generation errors and return error message and failure type."""
     if isinstance(error, PatchError):
         return str(error), "patch_failure"
     elif isinstance(error, SyntaxError):
         return f"Syntax error: {str(error)}", "syntax_error"
     elif isinstance(error, TimeoutError):
-        return f"Evaluation timed out after {context.eval_timeout} seconds", "timeout"
+        return f"Timeout error: {str(error)}", "timeout"
     else:
         return str(error), "runtime_error"
 
@@ -113,31 +114,41 @@ def generate_program(
         used_model=context.llm_instance.get_used_model()
     )
     
+    # Decide whether to use tabu search or improvement approach
+    use_tabu_search = random.random() < cfg.evolution.tabu_search_probability    
     # Generate initial program
-    explanation, code_diff_section = generate_initial_response(context, parent_row, inspiration_rows, record)
+    try:
+        explanation, code_diff_section = generate_initial_response(context, parent_row, inspiration_rows, record, use_tabu_search=use_tabu_search)
+    except Exception as e:
+        error_message, failure_type = handle_program_generation_error(e)
+        record.error_message = error_message
+        record.failure_type = failure_type
+        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s, model %s", 
+                    current_gen, individual_id, record.failure_type, record.error_message, record.used_model)
+        return record
+    
     if explanation is None or code_diff_section is None:
         record.failure_type = "invalid_response"
         record.error_message = "Invalid initial response from LLM"
         context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s, model %s", 
                     current_gen, individual_id, record.failure_type, record.error_message, record.used_model)
-        record.generation_time = time.time() - generation_start_time
         return record
     record.explanation = explanation
 
     # Generate and evaluate with retries
-    for retry_count in range(context.max_retries + 1):        
-        if retry_count > 0:
-            context.logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
-                        current_gen, individual_id, record.failure_type, retry_count, context.max_retries, record.  error_message)
-            
-            # Generate a retry response
-            code_diff_section = generate_retry_response(context, record)
-            if code_diff_section is None:
-                record.failure_type = "invalid_response"
-                record.error_message = "Invalid response from LLM"
-                break
-        
+    for retry_count in range(context.max_retries + 1):                
         try:
+            if retry_count > 0:
+                context.logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
+                            current_gen, individual_id, record.failure_type, retry_count, context.max_retries, record.error_message)
+                
+                # Generate a retry response
+                code_diff_section = generate_retry_response(context, record)
+                if code_diff_section is None:
+                    record.failure_type = "invalid_response"
+                    record.error_message = "Invalid response from LLM"
+                    break
+
             # Apply the patch to the code
             record.code = context.patcher.apply_diff(record.code, code_diff_section)
             # Compile the new program to check for syntax errors
@@ -158,7 +169,7 @@ def generate_program(
             break
             
         except Exception as e:
-            error_message, failure_type = handle_evaluation_error(e, context)
+            error_message, failure_type = handle_program_generation_error(e)
             record.error_message = error_message
             record.failure_type = failure_type
     
@@ -180,8 +191,12 @@ def generate_program(
         context.llm_instance.reset_conversation()
         # Select retry model for feedback generation
         context.llm_instance.select_retry_model()
-        feedback_prompt = context.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs, cfg.problem_eval)
-        record.feedback = context.llm_instance.generate(feedback_prompt)
+        try:
+            feedback_prompt = context.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs, cfg.problem_eval)
+            record.feedback = context.llm_instance.generate(feedback_prompt)
+        except Exception as e:
+            context.logger.error("Gen %d, Individual %d: failed to generate feedback: %s", 
+                                current_gen, individual_id, str(e))
     
     # Get final metrics from LLM engine
     record.total_llm_time, record.total_tokens = context.llm_instance.get_metrics()

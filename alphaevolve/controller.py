@@ -143,37 +143,60 @@ class EvolutionController:
         program_records = []
         successful_individuals = 0
         
-        with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 20)) as executor:
-            # Submit all program generation tasks with pre-sampled data
-            # Each worker will create its own program generation context to avoid sharing conversation history
-            future_to_id = {
-                executor.submit(generate_program, i, parent_data, current_gen, self.cfg, self.logger, self.context.client): i 
-                for i, parent_data in enumerate(parent_inspiration_pairs)
-            }
-            
-            # Use tqdm for progress tracking
-            with tqdm(total=population_size, desc=f"Generation {current_gen}", 
-                     disable=self.cfg.debug) as pbar:
-                # Collect results as they complete
-                for future in concurrent.futures.as_completed(future_to_id):
-                    individual_id = future_to_id[future]
-                    try:
-                        result = future.result()
-                        
-                        # Add program to database
-                        self.context.database.add(result)
-                        
-                        # Store successful individuals and program records for logging
-                        if result.score is not None:
-                            successful_individuals += 1                        
-                        program_records.append(result)
-                    except Exception as e:
-                        import traceback
-                        self.logger.error("Gen %d, Individual %d: failed with exception: %s", 
-                                        current_gen, individual_id, str(e))
-                        self.logger.error("Full traceback: %s", traceback.format_exc())
+        # Use sequential execution for debugging to allow breakpoints
+        if self.cfg.debug:
+            self.logger.info("DEBUG MODE: Running generation sequentially for interactive debugging")
+            for i, parent_data in enumerate(parent_inspiration_pairs):
+                try:
+                    result = generate_program(i, parent_data, current_gen, self.cfg, self.logger, self.context.client)
                     
-                    pbar.update(1)
+                    # Add program to database
+                    self.context.database.add(result)
+                    
+                    # Store successful individuals and program records for logging
+                    if result.score is not None:
+                        successful_individuals += 1                        
+                    program_records.append(result)
+                    
+                    self.logger.debug("Gen %d, Individual %d: completed", current_gen, i)
+                except Exception as e:
+                    import traceback
+                    self.logger.error("Gen %d, Individual %d: failed with exception: %s", 
+                                    current_gen, i, str(e))
+                    self.logger.error("Full traceback: %s", traceback.format_exc())
+        else:
+            # Original parallel execution
+            with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 20)) as executor:
+                # Submit all program generation tasks with pre-sampled data
+                # Each worker will create its own program generation context to avoid sharing conversation history
+                future_to_id = {
+                    executor.submit(generate_program, i, parent_data, current_gen, self.cfg, self.logger, self.context.client): i 
+                    for i, parent_data in enumerate(parent_inspiration_pairs)
+                }
+                
+                # Use tqdm for progress tracking
+                with tqdm(total=population_size, desc=f"Generation {current_gen}", 
+                         disable=self.cfg.debug) as pbar:
+                    # Collect results as they complete
+                    for future in concurrent.futures.as_completed(future_to_id):
+                        individual_id = future_to_id[future]
+                        try:
+                            result = future.result()
+                            
+                            # Add program to database
+                            self.context.database.add(result)
+                            
+                            # Store successful individuals and program records for logging
+                            if result.score is not None:
+                                successful_individuals += 1                        
+                            program_records.append(result)
+                        except Exception as e:
+                            import traceback
+                            self.logger.error("Gen %d, Individual %d: failed with exception: %s", 
+                                            current_gen, individual_id, str(e))
+                            self.logger.error("Full traceback: %s", traceback.format_exc())
+                        
+                        pbar.update(1)
         
         # Log generation statistics
         self._log_generation_summary(current_gen, population_size, program_records)

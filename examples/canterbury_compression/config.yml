@@ -13,15 +13,15 @@ llm:
     - name: gemini-2.5-flash-lite
       probability: 0.7
       temperature: 0.9
-      llm_timeout: 30.0
+      llm_timeout: 180.0
     - name: gemini-2.5-flash
       probability: 0.2
       temperature: 0.9
-      llm_timeout: 120.0
+      llm_timeout: 240.0
     - name: gemini-2.5-pro
       probability: 0.1
       temperature: 0.9
-      llm_timeout: 180.0
+      llm_timeout: 300.0
   # retry_model: gemini-2.5-flash-lite
   system_prompt: |
     You are tasked with implementing a Python text compression algorithm.

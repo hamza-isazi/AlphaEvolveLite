@@ -41,7 +41,7 @@ class EvolutionaryDatabase:
     def __init__(self, cfg: Config) -> None:
         # SQLite URI: sqlite:///path/to.db → strip the prefix
         path = cfg.db_uri.replace("sqlite:///", "", 1)
-        self.conn = sqlite3.connect(path, isolation_level=None)
+        self.conn = sqlite3.connect(path, isolation_level=None, timeout=30.0)  # 30 second timeout
         self.conn.row_factory = sqlite3.Row  # enable dict-like access to rows
         self.conn.execute("PRAGMA foreign_keys = ON")
         self._ensure_schema()

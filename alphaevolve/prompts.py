@@ -24,15 +24,11 @@ TEMPLATE = """\
     {parent}
 
     # Task
-    Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above.
-    
-    Do not aim to match the performance of the best program - aim to exceed it.
-    Look for opportunities to combine the best ideas from multiple prior programs while adding novel improvements.
-    Consider edge cases, optimizations, and alternative approaches that the prior programs may have missed.
+    {task_instruction}
     
     **TARGET TO BEAT: Score {target_score:.3f}**
     
-    Suggest improvements that will lead to significantly better performance than any existing program.
+    {approach_instruction}
 
     # Response Format
     Your response MUST follow this exact structure:
@@ -174,7 +170,7 @@ class PromptSampler:
         """Check if the code contains evolve blocks."""
         return bool(_EVOLVE_RE.search(code))
 
-    def build(self, parent_row: dict, inspiration_rows: Sequence[Dict]) -> str:
+    def build(self, parent_row: dict, inspiration_rows: Sequence[Dict], use_tabu_search: bool = False) -> str:
         # Choose evolve instructions based on whether evolve blocks are present
         evolve_instructions = EVOLVE_INSTRUCTIONS if self._has_evolve_blocks(parent_row['code']) else FREE_INSTRUCTIONS
         
@@ -184,11 +180,21 @@ class PromptSampler:
             all_scores.extend(r['score'] for r in inspiration_rows)
         target_score = max(all_scores)
         
+        # Determine task instruction and approach based on tabu search mode
+        if use_tabu_search:
+            task_instruction = "Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above using a FUNDAMENTALLY DIFFERENT APPROACH."
+            approach_instruction = "IMPORTANT: You must take a completely different approach from the prior programs. Consider them 'taboo' and avoid their strategies. Explore alternative algorithms, data structures, or problem-solving paradigms that the prior programs have not used. Think outside the box and try something radically different."
+        else:
+            task_instruction = "Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above."
+            approach_instruction = "Do not aim to match the performance of the best program - aim to exceed it. Look for opportunities to combine the best ideas from multiple prior programs while adding novel improvements. Consider edge cases, optimizations, and alternative approaches that the prior programs may have missed. Suggest improvements that will lead to significantly better performance than any existing program."
+        
         prompt = TEMPLATE.format(
             parent=self._format_rows([parent_row], include_feedback=self.enable_feedback),
             inspirations=self._format_rows(inspiration_rows, include_feedback=self.enable_feedback) if inspiration_rows else "None yet.",
             evolve_instructions=evolve_instructions,
-            target_score=target_score
+            target_score=target_score,
+            task_instruction=task_instruction,
+            approach_instruction=approach_instruction
         )
         return prompt
 

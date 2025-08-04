@@ -64,6 +64,7 @@ evolution:
   max_retries: 3
   eval_timeout: 30.0
   enable_feedback: true  # Enable LLM-generated feedback for successful programs
+  tabu_search_probability: 0.4  # Probability of using tabu search (fundamentally new approach) vs improvement
 
 problem:
   entry_script: examples/timetable_optimization/solution.py
