@@ -9,14 +9,24 @@ script_dir = Path(__file__).parent.resolve()
 CORPUS_DIR = script_dir / "cantrbry"
 
 def _check_for_imports(program_path: str):
-    """Check if the program contains any import statements and raise an error if found."""
+    """Check if the program contains any compression-related import statements and raise an error if found."""
+    # List of compression-related libraries that are not allowed
+    compression_libs = [
+        'zlib', 'bz2', 'lzma', 'gzip', 'zipfile', 'tarfile', 'compress', 'decompress',
+        'zstandard', 'lz4', 'snappy', 'brotli', 'lzo', 'quicklz', 'lzf'
+    ]
+    
     with open(program_path, 'r') as f:
         content = f.read()
     
     lines = content.split('\n')
     for i, line in enumerate(lines, 1):
-        if "import" in line:
-            raise ValueError(f"Import statement found on line {i}: '{line.strip()}'. No imports are allowed in this experiment.")
+        line_lower = line.lower().strip()
+        if "import" in line_lower:
+            # Check for compression library imports
+            for lib in compression_libs:
+                if f"import {lib}" in line_lower or f"from {lib}" in line_lower:
+                    raise ValueError(f"Compression library import found on line {i}: '{line.strip()}'. Compression libraries are not allowed in this experiment.")
 
 def _load_module(path: str, imports_allowed: bool = False):
     # First check for imports (no imports allowed)

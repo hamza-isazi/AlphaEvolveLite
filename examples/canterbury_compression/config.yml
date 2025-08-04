@@ -1,8 +1,8 @@
 db_uri: sqlite:///alphaevolve.db
 
 experiment:
-  label: canterbury-compression-gemini-enhanced-selection-with-boltzmann
-  notes: "Canterbury corpus compression experiment with no imports"
+  label: canterbury-compression-gemini-enhanced-selection-with-tabu
+  notes: "Canterbury corpus compression experiment with no imports and tabu search inspired prompting"
   save_top_k: 5               # number of top programs to save one completion of the experiment
 
 llm:
@@ -13,16 +13,16 @@ llm:
     - name: gemini-2.5-flash-lite
       probability: 0.7
       temperature: 0.9
-      llm_timeout: 60.0
+      llm_timeout: 30.0
     - name: gemini-2.5-flash
       probability: 0.2
       temperature: 0.9
-      llm_timeout: 180.0
+      llm_timeout: 120.0
     - name: gemini-2.5-pro
       probability: 0.1
       temperature: 0.9
-      llm_timeout: 300.0
-  # retry_model: gemini-2.5-flash
+      llm_timeout: 180.0
+  # retry_model: gemini-2.5-flash-lite
   system_prompt: |
     You are tasked with implementing a Python text compression algorithm.
     Your program must define two functions:
@@ -36,12 +36,13 @@ llm:
     - Your solution must not use any external libraries.
     - The `compress()` and `decompress()` functions must be defined in a single file called `solution.py`.
     - Compression must be lossless.
-    - You may only use the standard Python library.
+    - You may only use imports from the Python standard library (no third-party packages).
+    - You may NOT use any compression-related libraries from the standard library, including: zlib, bz2, lzma, gzip, zipfile, tarfile, or any other compression modules.
 
     Your program will be evaluated using a score of `1.0 / total_compressed_size_in_bytes`, summed across all corpus files. Smaller total size = higher score.
 
 evolution:
-  population_size: 20
+  population_size: 40
   temperature: 1.5
   max_generations: 100
   inspiration_count: 4        # number of inspirations to use in each generation
@@ -52,6 +53,7 @@ evolution:
   selection_method: enhanced_inspiration  # Method: "boltzmann", "top_k_and_random", or "enhanced_inspiration"
   recent_generations: 5       # Number of recent generations to consider for inspiration selection
   recent_percentile: 10.0     # Percentile threshold for recent generation selection (0-100)
+  tabu_search_probability: 0.5  # Probability of using tabu search (fundamentally new approach) vs improvement
 
 
 problem:
