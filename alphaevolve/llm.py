@@ -76,14 +76,9 @@ class LLMEngine:
         self._total_llm_time = 0.0
         self._total_tokens = 0
 
-    def _generate_internal(self, prompt: str) -> str:
-        """Internal method that performs the actual LLM generation."""
-        # Select a new model for each generation (optional - could be per call)
-        self._select_model()
-        
-        # Add the user prompt to the conversation
-        self.add_message("user", prompt)
-        
+    def _generate_internal(self) -> str:
+        """Internal method that performs the actual LLM generation. DO NOT MAKE ANY STATE CHANGES HERE,
+        they will not persist since this function is called in a subprocess by the timeout decorator."""                
         # Make the API call
         response = self.client.chat.completions.create(
             model=self.selected_model.name,
@@ -97,34 +92,34 @@ class LLMEngine:
         usage = response.usage
         total_tokens = usage.total_tokens if usage else 0
         
-        # Add the assistant's response to the conversation
-        if content:
-            self.add_message("assistant", content)
-        
         return content.strip() if content else "", total_tokens
 
     def generate(self, prompt: str) -> str:
         """Generate a response from the LLM with timeout handling."""
         # Track response time
         start_time = time.time()
-        
+        # Add the user prompt to the conversation
+        self.add_message("user", prompt)
         try:
             # Use the timeout decorator to wrap the generation
             # (OpenAI's built-in timeout param does not work correctly)
-            timeout_func = timeout(
+            generate_with_timeout = timeout(
                 self.selected_model.llm_timeout, 
                 f"LLM generation timed out after {self.selected_model.llm_timeout} seconds"
             )(self._generate_internal)
             
-            content, total_tokens = timeout_func(prompt)
+            content, total_tokens = generate_with_timeout()
             
         except Exception as e:
             self.logger.error(f"Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
             raise e
-
-        response_time = time.time() - start_time
         
+        # Add the assistant's response to the conversation
+        if content:
+            self.add_message("assistant", content)
+
         # Update internal metrics
+        response_time = time.time() - start_time
         self._total_llm_time += response_time
         self._total_tokens += total_tokens
         

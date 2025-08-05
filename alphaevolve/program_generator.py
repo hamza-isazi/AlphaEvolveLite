@@ -119,6 +119,7 @@ def generate_program(
     # Generate initial program
     try:
         explanation, code_diff_section = generate_initial_response(context, parent_row, inspiration_rows, record, use_tabu_search=use_tabu_search)
+        record.conversation = context.llm_instance.get_conversation_json()
     except Exception as e:
         error_message, failure_type = handle_program_generation_error(e)
         record.error_message = error_message

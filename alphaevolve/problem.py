@@ -24,7 +24,8 @@ class Problem:
 
     def _evaluate_with_logs(self, path: str) -> Tuple[float, str]:
         """
-        Wrapper around the evaluate function that captures logs.
+        Wrapper around the evaluate function that captures logs. DO NOT MAKE ANY STATE CHANGES HERE,
+        they will not persist since this function is called in a subprocess by the timeout decorator.
         
         Returns:
             Tuple of (score, logs) where logs is the captured stdout/stderr
@@ -78,13 +79,13 @@ class Problem:
         """
         try:
             # Use the timeout decorator to wrap the evaluation
-            timeout_func = timeout_decorator(
+            evaluate_with_timeout = timeout_decorator(
                 timeout, 
                 f"Evaluation timed out after {timeout} seconds"
             )(self._evaluate_with_logs)
             
             start_time = time.time()
-            score, logs = timeout_func(path)
+            score, logs = evaluate_with_timeout(path)
             execution_time = time.time() - start_time
             
             return (score, execution_time, logs)
