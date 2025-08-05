@@ -227,7 +227,8 @@ class EvolutionController:
                             generation_counter += 1
                             
                             # Check if this generation produced a new best score
-                            gen_best_score = max(result.score for result in generation_program_records if result.score is not None)
+                            scores = [r.score for r in generation_program_records if r.score is not None]
+                            gen_best_score = max(scores) if scores else None
                             if gen_best_score is not None and gen_best_score > best_score:
                                 self.logger.info("New best score: %.3f (prev: %.3f)", gen_best_score, best_score)
                                 best_score = gen_best_score

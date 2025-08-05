@@ -16,7 +16,6 @@ class ModelCfg:
     name: str
     probability: float
     temperature: Optional[float] = None
-    llm_timeout: float = 120.0  # Timeout in seconds for LLM API calls
 
 
 @dataclass
@@ -25,6 +24,7 @@ class LLMCfg:
     models: List[ModelCfg]
     system_prompt: str = "You are an expert software developer evolving Python code using diffs."
     retry_model: Optional[str] = None  # Model name to use for retries and feedback (if None, uses same model selection logic)
+    llm_timeout: float = 120.0  # Global timeout in seconds for LLM API calls
 
 
 @dataclass
@@ -62,12 +62,17 @@ class Config:
     def from_dict(cls, data: dict) -> "Config":
         llm_data = data["llm"]
         models = [ModelCfg(**model_data) for model_data in llm_data["models"]]
-        
+        # Check that the sum of probabilities is 1.0
+        total_probability = sum(model.probability for model in models)  
+        if total_probability != 1.0:
+            raise ValueError(f"The sum of probabilities for the models must be 1.0, but is {total_probability}")
+
         llm_cfg = LLMCfg(
             provider=llm_data["provider"],
             models=models,
             system_prompt=llm_data.get("system_prompt", "You are an expert software developer evolving Python code using diffs."),
-            retry_model=llm_data.get("retry_model")
+            retry_model=llm_data.get("retry_model"),
+            llm_timeout=llm_data.get("llm_timeout", 300.0)
         )
         
         return cls(

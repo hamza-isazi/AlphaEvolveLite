@@ -213,15 +213,14 @@ experiment:
 
 llm:
   provider: openai
+  llm_timeout: 120.0  # Global timeout for all LLM requests
   models:
     - name: gpt-4o-mini
       probability: 0.7
       temperature: 0.9
-      llm_timeout: 120.0
     - name: gpt-4o
       probability: 0.3
       temperature: 0.8
-      llm_timeout: 120.0
   retry_model: gpt-4o  # Use more capable model for retries and feedback
   system_prompt: |
     You are an expert software engineer solving the following challenge:

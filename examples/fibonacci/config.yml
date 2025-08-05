@@ -7,15 +7,14 @@ experiment:
 
 llm:
   provider: gemini
+  llm_timeout: 90.0  # Global timeout for all LLM requests
   models:
     - name: gemini-2.5-flash
       probability: 0.9
       temperature: 0.8
-      llm_timeout: 60.0
     - name: gemini-2.5-pro
       probability: 0.1
       temperature: 0.9
-      llm_timeout: 120.0
   retry_model: gemini-2.5-flash-lite # Use the faster model for retries and feedback
 
 evolution:

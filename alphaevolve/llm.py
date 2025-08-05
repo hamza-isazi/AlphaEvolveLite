@@ -104,8 +104,8 @@ class LLMEngine:
             # Use the timeout decorator to wrap the generation
             # (OpenAI's built-in timeout param does not work correctly)
             generate_with_timeout = timeout(
-                self.selected_model.llm_timeout, 
-                f"LLM generation timed out after {self.selected_model.llm_timeout} seconds"
+                self.llm_cfg.llm_timeout, 
+                f"LLM generation timed out after {self.llm_cfg.llm_timeout} seconds"
             )(self._generate_internal)
             
             content, total_tokens = generate_with_timeout()
@@ -144,6 +144,14 @@ def create_llm_client(llm_cfg: LLMCfg) -> OpenAI:
         return OpenAI(
             api_key=api_key, 
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        )
+    elif llm_cfg.provider.lower() == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError("Set OPENROUTER_API_KEY in your environment.")
+        return OpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1"
         )
     else:
         raise ValueError(f"Unsupported LLM provider: {llm_cfg.provider}")

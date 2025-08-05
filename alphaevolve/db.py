@@ -66,7 +66,7 @@ class EvolutionaryDatabase:
 
             CREATE TABLE IF NOT EXISTS programs (
                 id   INTEGER PRIMARY KEY AUTOINCREMENT,
-                explanation TEXT NOT NULL,
+                explanation TEXT,
                 code TEXT,
                 score REAL,
                 gen  INTEGER NOT NULL,

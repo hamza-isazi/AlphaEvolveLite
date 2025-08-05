@@ -1,28 +1,72 @@
 db_uri: sqlite:///alphaevolve.db
 
 experiment:
-  label: canterbury-compression-gemini-enhanced-selection-with-tabu
+  label: canterbury-compression-openrouter-ensemble
   notes: "Canterbury corpus compression experiment with no imports and tabu search inspired prompting"
   save_top_k: 5               # number of top programs to save one completion of the experiment
 
 llm:
-  # provider: openai
-  # model: gpt-4o-mini          # or any model your key can access
-  provider: gemini
+  provider: openrouter
+  llm_timeout: 300.0  # Global timeout for all LLM requests
   models:
-    - name: gemini-2.5-flash-lite
-      probability: 0.7
-      temperature: 0.9
-      llm_timeout: 180.0
-    - name: gemini-2.5-flash
-      probability: 0.2
-      temperature: 0.9
-      llm_timeout: 240.0
-    - name: gemini-2.5-pro
+    # OpenAI models - high performance, reliable
+    - name: openai/gpt-4.1
+      probability: 0.05
+      temperature: 0.7
+    - name: openai/gpt-4.1-mini
       probability: 0.1
-      temperature: 0.9
-      llm_timeout: 300.0
-  # retry_model: gemini-2.5-flash-lite
+      temperature: 0.7
+    - name: openai/gpt-4o-mini
+      probability: 0.1
+      temperature: 0.7
+    
+    # Google Gemini models - strong reasoning capabilities, decent cost
+    - name: google/gemini-2.5-pro
+      probability: 0.1
+      temperature: 0.7
+    - name: google/gemini-2.5-flash
+      probability: 0.1
+      temperature: 0.7
+    - name: google/gemini-2.5-flash-lite
+      probability: 0.1
+      temperature: 0.7
+    
+    # Anthropic Claude models - excellent for complex reasoning, high cost
+    - name: anthropic/claude-opus-4
+      probability: 0.025
+      temperature: 0.7
+    
+    - name: anthropic/claude-sonnet-4
+      probability: 0.075
+      temperature: 0.7
+
+    - name: anthropic/claude-3.5-haiku
+      probability: 0.1
+      temperature: 0.7
+
+    # Other OpenRouter models
+    - name: deepseek/deepseek-chat-v3-0324:free
+      probability: 0.05
+      temperature: 0.7
+
+    - name: qwen/qwen3-coder:free
+      probability: 0.05
+      temperature: 0.7
+
+    - name: mistralai/codestral-2508
+      probability: 0.05
+      temperature: 0.7
+
+    - name: meta-llama/llama-4-maverick
+      probability: 0.05
+      temperature: 0.7
+
+    - name: openrouter/horizon-beta
+      probability: 0.05
+      temperature: 0.7
+
+  retry_model: google/gemini-2.5-flash # Gemini flash is a nice balance between cost and reliability
+    
   system_prompt: |
     You are tasked with implementing a Python text compression algorithm.
     Your program must define two functions:
@@ -42,18 +86,18 @@ llm:
     Your program will be evaluated using a score of `1.0 / total_compressed_size_in_bytes`, summed across all corpus files. Smaller total size = higher score.
 
 evolution:
-  population_size: 40
+  population_size: 20
   temperature: 1.5
   max_generations: 100
   inspiration_count: 4        # number of inspirations to use in each generation
   max_retries: 3              # number of retries for failed program generation
-  eval_timeout: 10.0      # timeout in seconds for evaluation runs (0 = no timeout)
+  eval_timeout: 120.0      # timeout in seconds for evaluation runs (0 = no timeout)
   enable_feedback: false       # Enable LLM-generated feedback for successful programs
   # Enhanced inspiration selection parameters
   selection_method: enhanced_inspiration  # Method: "boltzmann", "top_k_and_random", or "enhanced_inspiration"
   recent_generations: 5       # Number of recent generations to consider for inspiration selection
   recent_percentile: 10.0     # Percentile threshold for recent generation selection (0-100)
-  tabu_search_probability: 0.5  # Probability of using tabu search (fundamentally new approach) vs improvement
+  tabu_search_probability: 0.1  # Probability of using tabu search (fundamentally new approach) vs improvement
 
 
 problem:
