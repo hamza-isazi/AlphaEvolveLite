@@ -12,7 +12,7 @@ from .problem import Problem
 from .llm import LLMEngine
 from openai import OpenAI
 from .config import Config
-from .response_parser import parse_structured_response
+from .response_parser import parse_code_response
 from .db import ProgramRecord
 
 @dataclass
@@ -44,10 +44,8 @@ def generate_initial_response(context: ProgramGenerationContext, parent_row: dic
     """Generate the initial response in the form of an explanation and a code diff section from parent and inspiration data."""
     prompt = context.prompt_sampler.build(parent_row, inspiration_rows, use_tabu_search=use_tabu_search)
     initial_response = context.llm_instance.generate(prompt)
-    
     # Parse initial response to get explanation and code
-    explanation, code_section = parse_structured_response(initial_response)
-    
+    explanation, code_section = parse_code_response(initial_response)    
     return explanation, code_section
 
 
@@ -76,8 +74,8 @@ def generate_retry_response(context: ProgramGenerationContext, record: ProgramRe
     response = context.llm_instance.generate(retry_prompt)
     
     # Parse the retry response to get new code
-    _, code_section = parse_structured_response(response)
-    return code_section
+    _, code_response = parse_code_response(response)
+    return code_response
 
 
 def generate_program(
@@ -118,21 +116,14 @@ def generate_program(
     use_tabu_search = random.random() < cfg.evolution.tabu_search_probability    
     # Generate initial program
     try:
-        explanation, code_diff_section = generate_initial_response(context, parent_row, inspiration_rows, record, use_tabu_search=use_tabu_search)
+        explanation, code_response = generate_initial_response(context, parent_row, inspiration_rows, record, use_tabu_search=use_tabu_search)
         record.conversation = context.llm_instance.get_conversation_json()
     except Exception as e:
         error_message, failure_type = handle_program_generation_error(e)
         record.error_message = error_message
         record.failure_type = failure_type
-        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s, model %s", 
-                    current_gen, individual_id, record.failure_type, record.error_message, record.used_model)
-        return record
-    
-    if explanation is None or code_diff_section is None:
-        record.failure_type = "invalid_response"
-        record.error_message = "Invalid initial response from LLM"
-        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s, model %s", 
-                    current_gen, individual_id, record.failure_type, record.error_message, record.used_model)
+        record.generation_time = time.time() - generation_start_time
+        record.total_llm_time, record.total_tokens = context.llm_instance.get_metrics()
         return record
     record.explanation = explanation
 
@@ -144,14 +135,10 @@ def generate_program(
                             current_gen, individual_id, record.failure_type, retry_count, context.max_retries, record.error_message)
                 
                 # Generate a retry response
-                code_diff_section = generate_retry_response(context, record)
-                if code_diff_section is None:
-                    record.failure_type = "invalid_response"
-                    record.error_message = "Invalid response from LLM"
-                    break
+                code_response = generate_retry_response(context, record)
 
             # Apply the patch to the code
-            record.code = context.patcher.apply_diff(record.code, code_diff_section)
+            record.code = context.patcher.apply_diff(record.code, code_response)
             # Compile the new program to check for syntax errors
             compile(record.code, "<candidate>", "exec")
             
@@ -181,8 +168,6 @@ def generate_program(
     if record.score is None:
         # Get metrics from LLM engine even for failed generations
         record.total_llm_time, record.total_tokens = context.llm_instance.get_metrics()
-        context.logger.debug("Gen %d, Individual %d: generation failed (%s): %s, model %s", 
-                    current_gen, individual_id, record.failure_type, record.error_message, record.used_model)
         record.generation_time = time.time() - generation_start_time
         return record
 
@@ -199,12 +184,7 @@ def generate_program(
             context.logger.error("Gen %d, Individual %d: failed to generate feedback: %s", 
                                 current_gen, individual_id, str(e))
     
-    # Get final metrics from LLM engine
+    # Get final metrics
     record.total_llm_time, record.total_tokens = context.llm_instance.get_metrics()
-    
-    # Success - log and return the record
     record.generation_time = time.time() - generation_start_time
-    context.logger.debug("Gen %d, Individual %d: new score %.3f, total eval time %.2fs, generation time %.2fs, total LLM time %.2fs, total tokens %d, model %s", 
-                current_gen, individual_id, record.score, record.total_evaluation_time, 
-                record.generation_time, record.total_llm_time, record.total_tokens, record.used_model)
     return record

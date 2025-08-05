@@ -5,6 +5,7 @@ from typing import List
 from tqdm import tqdm
 import statistics
 import logging
+import traceback
 from .log import init_logger
 from .config import Config
 from .program_generator import generate_program
@@ -118,118 +119,141 @@ class EvolutionController:
                         invalid_response_failures, invalid_response_failures/population_size*100)
         self.logger.info("=" * 60)
 
-    def run_generation(self, current_gen: int) -> int:
-        """
-        Run a single generation, generating multiple individuals in parallel.
-        
-        Returns:
-            Number of successful individuals generated
-        """
-        population_size = self.cfg.evolution.population_size
-        
-        self.logger.debug("Gen %d: Starting generation with population size %d", current_gen, population_size)
-        
-        # Pre-sample all parents and inspirations to avoid database threading issues
-        parent_inspiration_pairs = []
-        for i in range(population_size):
-            try:
-                parent_row, inspiration_rows = self.context.database.sample()
-                parent_inspiration_pairs.append((parent_row, inspiration_rows))
-            except Exception as e:
-                # This is a fundamental error - no parents available means evolution cannot continue
-                raise RuntimeError(f"Gen {current_gen}: No parents available for evolution. Database may be empty or corrupted.")
-        
-        # Generate programs in parallel with progress bar
-        program_records = []
-        successful_individuals = 0
-        
-        # Use sequential execution for debugging to allow breakpoints
-        if self.cfg.debug:
-            self.logger.info("DEBUG MODE: Running generation sequentially for interactive debugging")
-            for i, parent_data in enumerate(parent_inspiration_pairs):
-                try:
-                    result = generate_program(i, parent_data, current_gen, self.cfg, self.logger, self.context.client)
-                    
-                    # Add program to database
-                    self.context.database.add(result)
-                    
-                    # Store successful individuals and program records for logging
-                    if result.score is not None:
-                        successful_individuals += 1                        
-                    program_records.append(result)
-                    
-                    self.logger.debug("Gen %d, Individual %d: completed", current_gen, i)
-                except Exception as e:
-                    import traceback
-                    self.logger.error("Gen %d, Individual %d: failed with exception: %s", 
-                                    current_gen, i, str(e))
-                    self.logger.error("Full traceback: %s", traceback.format_exc())
-        else:
-            # Original parallel execution
-            with concurrent.futures.ThreadPoolExecutor(max_workers=min(population_size, 20)) as executor:
-                # Submit all program generation tasks with pre-sampled data
-                # Each worker will create its own program generation context to avoid sharing conversation history
-                future_to_id = {
-                    executor.submit(generate_program, i, parent_data, current_gen, self.cfg, self.logger, self.context.client): i 
-                    for i, parent_data in enumerate(parent_inspiration_pairs)
-                }
-                
-                # Use tqdm for progress tracking
-                with tqdm(total=population_size, desc=f"Generation {current_gen}", 
-                         disable=self.cfg.debug) as pbar:
-                    # Collect results as they complete
-                    for future in concurrent.futures.as_completed(future_to_id):
-                        individual_id = future_to_id[future]
-                        try:
-                            result = future.result()
-                            
-                            # Add program to database
-                            self.context.database.add(result)
-                            
-                            # Store successful individuals and program records for logging
-                            if result.score is not None:
-                                successful_individuals += 1                        
-                            program_records.append(result)
-                        except Exception as e:
-                            import traceback
-                            self.logger.error("Gen %d, Individual %d: failed with exception: %s", 
-                                            current_gen, individual_id, str(e))
-                            self.logger.error("Full traceback: %s", traceback.format_exc())
-                        
-                        pbar.update(1)
-        
-        # Log generation statistics
-        self._log_generation_summary(current_gen, population_size, program_records)
-        
-        self.logger.debug("Gen %d: Completed with %d/%d successful individuals", 
-                        current_gen, successful_individuals, population_size)
-        return successful_individuals
 
     def run_evolution(self):
-        total_successful = 0
-        best_score = self.context.database.top_k(1)[0]["score"]
-        self.logger.info("Starting evolution with %d generations, population size %d", 
-                        self.cfg.evolution.max_generations, self.cfg.evolution.population_size)
+        """
+        Execute the main evolutionary algorithm to generate and evolve programs.
         
-        for gen in range(1, self.cfg.evolution.max_generations + 1):
-            successful = self.run_generation(gen)
-            total_successful += successful
-            if successful > 0:
-                gen_best_score = self.context.database.top_k(1)[0]["score"]
-                if gen_best_score > best_score:
-                    # Log the improvement in best score
-                    self.logger.info("Best score improved by %.3f! New best: %.3f", gen_best_score - best_score, gen_best_score)
-                    best_score = gen_best_score
-            else:
-                self.logger.warning("Gen %d: no successful individuals generated, continuing to next generation", gen)
+        This function implements a continuous evolution strategy where:
+        - Programs are generated concurrently using a thread pool
+        - Each generation produces a population of programs
+        - The best programs from each generation are tracked
+        - Evolution continues until max_generations * population_size programs are created
         
-        self.logger.info("Evolution complete. Final generation: %d, Total successful individuals: %d", 
-                        self.cfg.evolution.max_generations, total_successful)
+        The algorithm maintains a continuous flow of program generation and evaluation,
+        with progress tracking and logging throughout the process.
+        """
+        # Initialize evolution parameters
+        max_concurrent = self.cfg.evolution.population_size  # Number of concurrent program generations
+        max_total = self.cfg.evolution.max_generations * self.cfg.evolution.population_size  # Total programs to generate
+        completed = 0  # Counter for completed program generations
+        generation_counter = 1  # Current generation number
+        generation_program_records = []  # Store results for current generation
+        
+        # Get the current best score from the database as baseline
+        with self.context.database.get_connection() as conn:
+            best_score = self.context.database.top_k(conn, 1)[0]["score"]
+        task_id_counter = 0  # Unique identifier for each generation task
+
+        self.logger.info("Starting continuous evolution with up to %d concurrent individuals", max_concurrent)
+        gen_pbar = tqdm(total=self.cfg.evolution.population_size, desc=f"Generation {generation_counter}")
+
+        # Helper function to generate a single program and save it to the database
+        def generate_and_save_program(task_id):
+            """
+            Generate a single program using evolutionary techniques and store it in the database.
+            
+            Args:
+                task_id: Unique identifier for this generation task
+                
+            Returns:
+                ProgramRecord or None: The generated program record if successful, None if failed
+            """
+            try:
+                # Sample parent program and inspiration programs from database
+                parent_row, inspiration_rows = self.context.database.sample()
+                
+                # Generate a new program using the evolutionary algorithm
+                result = generate_program(
+                    task_id,
+                    (parent_row, inspiration_rows),
+                    generation_counter,
+                    self.cfg,
+                    self.logger,
+                    self.context.client
+                )
+                
+                # Store the generated program in the database
+                program_id = self.context.database.add(result)
+                
+                # Log the result based on whether generation was successful
+                if result.score is not None:
+                    self.logger.debug("Stored successful program (program_id=%d, task_id=%d, model=%s) with score %.3f", program_id, task_id, result.used_model, result.score)
+                else:
+                    self.logger.debug("Stored failed program (program_id=%d, task_id=%d, model=%s) with failure type (%s) and error: %s", program_id, task_id, result.used_model, result.failure_type, result.error_message)
+                return result
+            except Exception as e:
+                # Log any exceptions that occur during program generation
+                self.logger.error("Individual %d failed: %s", task_id, str(e))
+                self.logger.error("Full traceback: %s", traceback.format_exc())
+                return None
+
+        # Set up thread pool for concurrent program generation
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+            # Submit initial batch of program generation tasks
+            futures = {
+                executor.submit(generate_and_save_program, task_id_counter + i)
+                for i in range(max_concurrent)
+            }
+            task_id_counter += max_concurrent
+
+            # Main evolution loop: generate programs continuously until max_total is reached
+            for i in range(max_total):
+                # Wait for at least one task to complete before proceeding
+                # `futures` is automatically updated to only include still-running tasks
+                done, futures = concurrent.futures.wait(futures, return_when=concurrent.futures.FIRST_COMPLETED)
+
+                # Process completed program generation tasks
+                for finished in done:
+                    result = finished.result()
+
+                    if result:
+                        # Store successful program result and update progress
+                        generation_program_records.append(result)
+                        completed += 1
+                        gen_pbar.update(1)
+
+                        # Check if we've completed a full generation
+                        if completed % self.cfg.evolution.population_size == 0:
+                            # Close current progress bar and log generation summary
+                            gen_pbar.close()
+                            self._log_generation_summary(
+                                generation_counter,
+                                self.cfg.evolution.population_size,
+                                generation_program_records
+                            )
+                            
+                            # Move to next generation
+                            generation_counter += 1
+                            
+                            # Check if this generation produced a new best score
+                            gen_best_score = max(result.score for result in generation_program_records if result.score is not None)
+                            if gen_best_score is not None and gen_best_score > best_score:
+                                self.logger.info("New best score: %.3f (prev: %.3f)", gen_best_score, best_score)
+                                best_score = gen_best_score
+                            
+                            # Reset for next generation
+                            generation_program_records.clear()
+                            
+                            # Create new progress bar for next generation (if not the last one)
+                            if i < max_total - 1:
+                                gen_pbar = tqdm(total=self.cfg.evolution.population_size, desc=f"Generation {generation_counter}")
+
+                    # Submit a new task to replace the completed one, maintaining continuous generation
+                    future = executor.submit(generate_and_save_program, task_id_counter)
+                    futures.add(future)
+                    task_id_counter += 1
+
+        # Log final evolution results
+        self.logger.info("Continuous evolution finished after %d individuals. Best score: %.3f", completed, best_score)
+        
+        # Save the top performing candidates to files
         self.save_top_k_candidates()
 
     def save_top_k_candidates(self):
         self.logger.info("Saving top %d candidates", self.cfg.exp.save_top_k)
-        rows = self.context.database.top_k(self.cfg.exp.save_top_k)
+        with self.context.database.get_connection() as conn:
+            rows = self.context.database.top_k(conn, self.cfg.exp.save_top_k)
         results_dir = Path(f"results/{self.cfg.exp.label}")
         results_dir.mkdir(parents=True, exist_ok=True)
 

@@ -10,15 +10,16 @@ _CODE_RE = re.compile(
     re.DOTALL,
 )
 
-def parse_structured_response(response: str) -> Tuple[Optional[str], Optional[str]]:
+
+def parse_code_response(response: str) -> Tuple[Optional[str], str]:
     """
-    Parse a structured LLM response to extract explanation and code sections.
+    Parse a structured LLM response to extract code with an optional explanation.
     
     Args:
         response: The full LLM response text
         
     Returns:
-        Tuple of (explanation, code) where both can be None if not found
+        Tuple of (explanation, code) where explanation can be None if not found and code is the entire response if no code section is found
     """
     # Extract explanation section
     explanation_match = _EXPLANATION_RE.search(response)
@@ -31,9 +32,7 @@ def parse_structured_response(response: str) -> Tuple[Optional[str], Optional[st
     code = None
     if code_match:
         code = code_match.group(1).strip()
-    
-    # If no structured format found, treat entire response as code
-    if explanation is None and code is None:
+    else:
+        # If no code section is found, return the entire response as code
         code = response
-    
     return explanation, code 

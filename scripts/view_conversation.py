@@ -28,7 +28,7 @@ def get_programs(db_path: str, experiment_id: int = None) -> list:
     cursor = conn.cursor()
     if experiment_id:
         cursor.execute("""
-            SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, 
+            SELECT id, explanation, code, score, gen, parent_id, experiment_id, failure_type, retry_count, 
                    total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation
             FROM programs
             WHERE experiment_id = ?
@@ -36,7 +36,7 @@ def get_programs(db_path: str, experiment_id: int = None) -> list:
         """, (experiment_id,))
     else:
         cursor.execute("""
-            SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, 
+            SELECT id, explanation, code, score, gen, parent_id, experiment_id, failure_type, retry_count, 
                    total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation
             FROM programs
             ORDER BY gen DESC, score DESC
@@ -54,7 +54,7 @@ def get_program_by_id(db_path: str, program_id: int) -> dict:
     
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, 
+        SELECT id, explanation, code, score, gen, parent_id, experiment_id, failure_type, retry_count, 
                total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation
         FROM programs
         WHERE id = ?
@@ -149,6 +149,7 @@ def main():
             return
         
         print(f"Program ID: {program['id']}")
+        print(f"Explanation: {program['explanation']}")
         print(f"Generation: {program['gen']}")
         print(f"Score: {program['score']}")
         print(f"Parent ID: {program['parent_id']}")
@@ -160,6 +161,8 @@ def main():
         print()
         
         display_conversation(program['conversation'], args.pretty)
+
+        print(f"Final Code: {program['code']}")
     
     else:
         parser.print_help()

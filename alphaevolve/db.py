@@ -41,17 +41,20 @@ class EvolutionaryDatabase:
     def __init__(self, cfg: Config) -> None:
         # SQLite URI: sqlite:///path/to.db → strip the prefix
         path = cfg.db_uri.replace("sqlite:///", "", 1)
-        self.conn = sqlite3.connect(path, isolation_level=None, timeout=30.0)  # 30 second timeout
-        self.conn.row_factory = sqlite3.Row  # enable dict-like access to rows
-        self.conn.execute("PRAGMA foreign_keys = ON")
-        self._ensure_schema()
+        self.db_path = path
         self.cfg = cfg
-        self.experiment_id = self._ensure_experiment(
-            cfg.exp.label, cfg.exp.notes
-        )
+        with self.get_connection() as conn:
+            self._ensure_schema(conn)
+            self.experiment_id = self._ensure_experiment(conn, cfg.exp.label, cfg.exp.notes)
 
-    def _ensure_schema(self) -> None:
-        cur = self.conn.cursor()
+    def get_connection(self):
+        conn = sqlite3.connect(self.db_path, timeout=30.0)
+        conn.row_factory = sqlite3.Row
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
+    def _ensure_schema(self, conn) -> None:
+        cur = conn.cursor()
         cur.executescript(
             """
             CREATE TABLE IF NOT EXISTS experiments (
@@ -89,8 +92,8 @@ class EvolutionaryDatabase:
             """
         )
 
-    def _ensure_experiment(self, label: str, notes: str) -> int:
-        cur = self.conn.cursor()
+    def _ensure_experiment(self, conn, label: str, notes: str) -> int:
+        cur = conn.cursor()
         cur.execute(
             """
             INSERT INTO experiments (label, notes)
@@ -115,29 +118,36 @@ class EvolutionaryDatabase:
         id : int
             The ID of the inserted program.
         """
-        cur = self.conn.cursor()
-        cur.execute(
-            """
-            INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, error_message, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation, evaluation_logs, feedback, used_model)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            record.to_insert_tuple(self.experiment_id),
-        )
-        lastrowid = cur.lastrowid
-        if lastrowid is None:
-            raise RuntimeError("Failed to insert program: lastrowid is None")
-        return lastrowid
+        with self.get_connection() as conn:
+            cur = conn.cursor()
+            cur.execute(
+                """
+                INSERT INTO programs (code, explanation, score, gen, parent_id, experiment_id, failure_type, error_message, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens, conversation, evaluation_logs, feedback, used_model)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                record.to_insert_tuple(self.experiment_id),
+            )
+            conn.commit()
+            lastrowid = cur.lastrowid
+            if lastrowid is None:
+                raise RuntimeError("Failed to insert program: lastrowid is None")
+            return lastrowid
 
-    def get_current_generation(self) -> int:
+    def _get_current_generation(self, conn: sqlite3.Connection) -> int:
         """
         Get the current generation number (highest generation in the database).
+        
+        Parameters
+        ----------
+        conn : sqlite3.Connection
+            Database connection to use for queries.
         
         Returns
         -------
         current_gen : int
             The current generation number, or 0 if no programs exist.
         """
-        cur = self.conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT MAX(gen) as max_gen FROM programs
@@ -147,55 +157,6 @@ class EvolutionaryDatabase:
         )
         result = cur.fetchone()
         return result[0] if result[0] is not None else 0
-
-    def _boltzmann_select(self) -> dict:
-        """
-        Select a parent program using Boltzmann selection from the most recent generation.
-        
-        The probability of selecting a program is proportional to exp(score / temperature).
-        Higher scores and lower temperatures make selection more deterministic.
-        
-        Returns
-        -------
-        program : dict
-            Selected program row.
-            
-        Raises
-        ------
-        RuntimeError
-            If no programs exist in the database.
-        """
-        # Get current generation
-        current_gen = self.get_current_generation()
-        
-        # Get all programs from the current generation for this experiment
-        cur = self.conn.cursor()
-        cur.execute(
-            """
-            SELECT * FROM programs
-            WHERE experiment_id = ? AND gen = ? AND failure_type IS NULL
-            """,
-            (self.experiment_id, current_gen),
-        )
-        programs = [dict(r) for r in cur.fetchall()]
-        
-        if not programs:
-            raise RuntimeError(f"No programs in generation {current_gen}")
-        
-        # Calculate Boltzmann weights
-        temperature = self.cfg.evolution.temperature
-        scores = [program["score"] for program in programs]
-        max_score = max(scores)
-        weights = [
-            math.exp((score - max_score) / temperature)
-            for score in scores
-        ]
-        total_weight = sum(weights)
-        probabilities = [w / total_weight for w in weights]
-        
-        # Select based on probabilities
-        selected = random.choices(programs, weights=probabilities, k=1)[0]
-        return selected
 
     def _boltzmann_select_from_pool(self, programs: List[dict], n: int, exclude_id: Optional[int] = None) -> List[dict]:
         """
@@ -249,12 +210,14 @@ class EvolutionaryDatabase:
         selected = random.choices(programs, weights=probabilities, k=min(n, len(programs)))
         return selected
 
-    def _boltzmann_select_parent_and_inspirations(self, num_inspirations: int) -> Tuple[dict, List[dict]]:
+    def _boltzmann_select_parent_and_inspirations(self, conn, num_inspirations: int) -> Tuple[dict, List[dict]]:
         """
         Select a parent and inspirations using Boltzmann selection from the current generation.
         
         Parameters
         ----------
+        conn : sqlite3.Connection
+            Database connection to use for queries.
         num_inspirations : int
             Number of inspirations to select.
             
@@ -266,10 +229,10 @@ class EvolutionaryDatabase:
             Selected inspiration programs (excluding parent).
         """
         # Get current generation
-        current_gen = self.get_current_generation()
+        current_gen = self._get_current_generation(conn)
         
         # Get all programs from the current generation for this experiment
-        cur = self.conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT * FROM programs
@@ -288,16 +251,23 @@ class EvolutionaryDatabase:
         
         return parent, inspirations
 
-    def top_k(self, k: int) -> List[dict]:
+    def top_k(self, conn: sqlite3.Connection, k: int) -> List[dict]:
         """
         Get the top k programs by score from all generations.
+
+        Parameters
+        ----------
+        k : int
+            Number of top programs to return.
+        conn : sqlite3.Connection
+            Database connection to use for queries.
 
         Returns
         -------
         programs : List[dict]
             The top k programs by score from all generations.
         """
-        cur = self.conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT * FROM programs
@@ -309,12 +279,14 @@ class EvolutionaryDatabase:
         )
         return [dict(r) for r in cur.fetchall()]
 
-    def get_recent_generations_programs(self, num_generations: int, exclude_ids: set = None) -> List[dict]:
+    def get_recent_generations_programs(self, conn: sqlite3.Connection, num_generations: int, exclude_ids: set = None) -> List[dict]:
         """
         Get programs from the most recent num_generations, excluding specified IDs.
         
         Parameters
         ----------
+        conn : sqlite3.Connection
+            Database connection to use for queries.
         num_generations : int
             Number of recent generations to consider
         exclude_ids : set, optional
@@ -325,10 +297,10 @@ class EvolutionaryDatabase:
         programs : List[dict]
             Programs from recent generations
         """
-        current_gen = self.get_current_generation()
+        current_gen = self._get_current_generation(conn)
         start_gen = max(1, current_gen - num_generations + 1)
         
-        cur = self.conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT * FROM programs
@@ -372,16 +344,23 @@ class EvolutionaryDatabase:
         # Return programs above and including the percentile
         return sorted_programs[percentile_index:]
 
-    def random_n(self, n: int) -> List[dict]:
+    def random_n(self, conn: sqlite3.Connection, n: int) -> List[dict]:
         """
         Get n random programs.
+
+        Parameters
+        ----------
+        conn : sqlite3.Connection
+            Database connection to use for queries.
+        n : int
+            Number of random programs to return.
 
         Returns
         -------
         programs : List[dict]
             n random programs from the current generation.
         """
-        cur = self.conn.cursor()
+        cur = conn.cursor()
         cur.execute(
             """
             SELECT * FROM programs
@@ -405,29 +384,32 @@ class EvolutionaryDatabase:
         inspirations : List[dict]
             Additional rows (≠ parent) to include in the prompt.
         """
-        selection_method = self.cfg.evolution.selection_method
-        num_inspirations = self.cfg.evolution.inspiration_count
-        
-        if selection_method == "boltzmann":
-            # Use Boltzmann selection for both parent and inspirations from current generation
-            parent, inspirations = self._boltzmann_select_parent_and_inspirations(num_inspirations)
-        elif selection_method == "top_k_and_random":
-            # Use a mix of top-k and random selection
-            parent, inspirations = self._top_k_and_random_select_parent_and_inspirations(num_inspirations)
-        elif selection_method == "enhanced_inspiration":
-            # Enhanced inspiration selection from combined pool
-            parent, inspirations = self._enhanced_inspiration_select_parent_and_inspirations(num_inspirations)
-        else:
-            raise ValueError(f"Invalid selection method: {selection_method}")
+        with self.get_connection() as conn:
+            selection_method = self.cfg.evolution.selection_method
+            num_inspirations = self.cfg.evolution.inspiration_count
+            
+            if selection_method == "boltzmann":
+                # Use Boltzmann selection for both parent and inspirations from current generation
+                parent, inspirations = self._boltzmann_select_parent_and_inspirations(conn, num_inspirations)
+            elif selection_method == "top_k_and_random":
+                # Use a mix of top-k and random selection
+                parent, inspirations = self._top_k_and_random_select_parent_and_inspirations(conn, num_inspirations)
+            elif selection_method == "enhanced_inspiration":
+                # Enhanced inspiration selection from combined pool
+                parent, inspirations = self._enhanced_inspiration_select_parent_and_inspirations(conn, num_inspirations)
+            else:
+                raise ValueError(f"Invalid selection method: {selection_method}")
 
-        return parent, inspirations
+            return parent, inspirations
 
-    def _top_k_and_random_select_parent_and_inspirations(self, num_inspirations: int) -> Tuple[dict, List[dict]]:
+    def _top_k_and_random_select_parent_and_inspirations(self, conn: sqlite3.Connection, num_inspirations: int) -> Tuple[dict, List[dict]]:
         """
         Select a parent and inspirations using a mix of top-k and random selection.
         
         Parameters
         ----------
+        conn : sqlite3.Connection
+            Database connection to use for queries.
         num_inspirations : int
             Number of inspirations to select.
             
@@ -439,7 +421,7 @@ class EvolutionaryDatabase:
             Selected inspiration programs (excluding parent).
         """
         # Select parent from top-k programs
-        top_k_programs = self.top_k(num_inspirations + 1)
+        top_k_programs = self.top_k(conn, num_inspirations + 1)
         if not top_k_programs:
             raise RuntimeError("No programs available for selection")
         
@@ -449,10 +431,10 @@ class EvolutionaryDatabase:
         half = num_inspirations // 2
         
         # a) strongest half (top-k but skip parent)
-        strong = [row for row in self.top_k(num_inspirations + 1) if row["id"] != parent["id"]][:half]
+        strong = [row for row in top_k_programs if row["id"] != parent["id"]][:half]
 
         # b) diverse half (uniform random, also skip parent & already-chosen rows)
-        diverse_pool = [row for row in self.random_n(num_inspirations * 2)
+        diverse_pool = [row for row in self.random_n(conn, num_inspirations * 2)
                         if row["id"] != parent["id"]
                         and row["id"] not in {r["id"] for r in strong}]
         diverse = random.sample(diverse_pool, min(num_inspirations - len(strong), len(diverse_pool)))
@@ -463,7 +445,7 @@ class EvolutionaryDatabase:
         return parent, inspirations
 
 
-    def _enhanced_inspiration_select_parent_and_inspirations(self, num_inspirations: int) -> Tuple[dict, List[dict]]:
+    def _enhanced_inspiration_select_parent_and_inspirations(self, conn: sqlite3.Connection, num_inspirations: int) -> Tuple[dict, List[dict]]:
         """
         Select a parent and inspirations using Boltzmann sampling from a combined pool:
         - Combines top-k all-time pool and recent generations above percentile threshold
@@ -472,6 +454,8 @@ class EvolutionaryDatabase:
         
         Parameters
         ----------
+        conn : sqlite3.Connection
+            Database connection to use for queries.
         num_inspirations : int
             Number of inspirations to select
             
@@ -486,14 +470,14 @@ class EvolutionaryDatabase:
         k = self.cfg.evolution.population_size * 2
         
         # Get top-k all-time programs
-        top_k_pool = self.top_k(k + 1)
+        top_k_pool = self.top_k(conn, k + 1)
         
         # Get recent generations programs (excluding top-k pool)
         recent_generations = self.cfg.evolution.recent_generations
         recent_percentile = self.cfg.evolution.recent_percentile
         
         exclude_ids = {p["id"] for p in top_k_pool}
-        recent_programs = self.get_recent_generations_programs(recent_generations, exclude_ids)
+        recent_programs = self.get_recent_generations_programs(conn, recent_generations, exclude_ids)
         
         # Filter recent programs by percentile
         filtered_recent_pool = self.get_percentile_programs(recent_programs, recent_percentile)
@@ -511,7 +495,7 @@ class EvolutionaryDatabase:
         except RuntimeError:
             # Fallback to random selection if combined pool is insufficient
             print(f"Combined pool insufficient for parent and {num_inspirations} inspirations. Falling back to random selection.")
-            all_programs = self.random_n(num_inspirations + 1)
+            all_programs = self.random_n(conn, num_inspirations + 1)
             if not all_programs:
                 raise RuntimeError("No programs available for selection")
             parent = all_programs[0]
