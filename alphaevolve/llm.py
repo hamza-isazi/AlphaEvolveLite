@@ -94,36 +94,47 @@ class LLMEngine:
         
         return content.strip() if content else "", total_tokens
 
-    def generate(self, prompt: str) -> str:
-        """Generate a response from the LLM with timeout handling."""
+    def generate(self, prompt: str, max_retries: int = 3) -> str:
+        """Generate a response from the LLM with timeout handling and retry logic."""
         # Track response time
         start_time = time.time()
         # Add the user prompt to the conversation
         self.add_message("user", prompt)
-        try:
-            # Use the timeout decorator to wrap the generation
-            # (OpenAI's built-in timeout param does not work correctly)
-            generate_with_timeout = timeout(
-                self.llm_cfg.llm_timeout, 
-                f"LLM generation timed out after {self.llm_cfg.llm_timeout} seconds"
-            )(self._generate_internal)
-            
-            content, total_tokens = generate_with_timeout()
-            
-        except Exception as e:
-            self.logger.error(f"Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
-            raise e
         
-        # Add the assistant's response to the conversation
-        if content:
-            self.add_message("assistant", content)
-
-        # Update internal metrics
-        response_time = time.time() - start_time
-        self._total_llm_time += response_time
-        self._total_tokens += total_tokens
-        
-        return content
+        last_exception = None
+        # Try up to max_retries times
+        for attempt in range(max_retries):
+            try:
+                # Use the timeout decorator to wrap the generation
+                # (OpenAI's built-in timeout param does not work correctly)
+                generate_with_timeout = timeout(
+                    self.llm_cfg.llm_timeout, 
+                    f"LLM generation timed out after {self.llm_cfg.llm_timeout} seconds"
+                )(self._generate_internal)
+                
+                content, total_tokens = generate_with_timeout()
+                
+                # Check if we got a valid response (not empty or None)
+                if not content or not content.strip():
+                    raise ValueError(f"Empty response from {self.selected_model.name}")
+                
+                # Add the assistant's response to the conversation
+                self.add_message("assistant", content)
+                
+                # Update internal metrics
+                response_time = time.time() - start_time
+                self._total_llm_time += response_time
+                self._total_tokens += total_tokens
+                
+                return content
+                        
+            except Exception as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    self.logger.warning(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
+                else:
+                    self.logger.error(f"All {max_retries} attempts failed. Last error: {str(e)}")
+                    raise last_exception
     
     def get_used_model(self) -> str:
         """Get the name of the currently selected model."""
