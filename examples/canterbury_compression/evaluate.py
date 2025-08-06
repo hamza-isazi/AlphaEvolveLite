@@ -136,11 +136,12 @@ def evaluate(program_path: str, imports_allowed: bool = False) -> float:
     return score_dict['combined_score']
 
 if __name__ == "__main__":
-    if len(sys.argv) != 2:
-        print("Usage: python evaluate.py <program_path>")
-        sys.exit(1)
+    print(evaluate("examples/canterbury_compression/initial_program.py"))
+    # if len(sys.argv) != 2:
+    #     print("Usage: python evaluate.py <program_path>")
+    #     sys.exit(1)
     
-    program_path = sys.argv[1]
+    # program_path = sys.argv[1]
     
-    result = evaluate(program_path, imports_allowed=True)
-    print(result)
+    # result = evaluate(program_path, imports_allowed=True)
+    # print(result)

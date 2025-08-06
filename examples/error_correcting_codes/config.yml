@@ -1,0 +1,37 @@
+db_uri: sqlite:///alphaevolve.db
+
+experiment:
+  label: error-correcting-codes-v1
+  notes: "Evolve error correcting code algorithms."
+  save_top_k: 3
+
+llm:
+  provider: openai
+  models:
+    - name: gpt-4o-mini
+      probability: 1.0
+      temperature: 0.9
+      llm_timeout: 120.0
+  system_prompt: |
+    You are solving the following problem:
+    Implement a pair of functions for a simple error correcting code.
+    
+    - encode(message: str) -> str: Encodes the message with error correction.
+    - decode(encoded: str) -> str: Decodes the encoded message, correcting up to 1 error.
+    
+    Constraints:
+    - Only use the Python standard library.
+    - The code must be in a single file called solution.py.
+    - The decode function must correct up to 1 single-character error in the encoded message.
+    - The encode/decode must be lossless for valid messages.
+
+evolution:
+  population_size: 10
+  temperature: 1.2
+  max_generations: 5
+  max_retries: 2
+  eval_timeout: 30.0
+
+problem:
+  entry_script: examples/error_correcting_codes/initial_program.py
+  evaluator:    examples/error_correcting_codes/evaluate.py
