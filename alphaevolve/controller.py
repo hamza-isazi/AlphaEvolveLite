@@ -146,22 +146,22 @@ class EvolutionController:
         max_total = self.cfg.evolution.max_generations * self.cfg.evolution.population_size  # Total programs to generate
         completed = 0  # Counter for completed program generations
         
+        # Get the current best score from the database as baseline
+        with self.context.database.get_connection() as conn:
+            best_score = self.context.database.top_k(conn, 1)[0]["score"]
+
         # Set number of completed programs based on resume flag
         if self.resume:
             completed = self.current_gen * self.cfg.evolution.population_size  # Account for already completed programs
-            self.logger.info("Resuming evolution from generation %d (completed: %d programs)", self.current_gen, completed)
+            self.logger.info("Resuming evolution from generation %d (completed: %d programs) with starting best score %.3f", self.current_gen, completed, best_score)
         else:
             completed = 0  # Counter for completed program generations
             
         generation_program_records = []  # Store results for current generation
-        
-        # Get the current best score from the database as baseline
-        with self.context.database.get_connection() as conn:
-            best_score = self.context.database.top_k(conn, 1)[0]["score"]
         task_id_counter = completed  # Unique identifier for each generation task
+        gen_pbar = tqdm(total=self.cfg.evolution.population_size, desc=f"Generation {self.current_gen}") # Progress bar for current generation
 
         self.logger.info("Starting continuous evolution with up to %d concurrent individuals", max_concurrent)
-        gen_pbar = tqdm(total=self.cfg.evolution.population_size, desc=f"Generation {self.current_gen}")
 
         # Helper function to generate a single program and save it to the database
         def generate_and_save_program(task_id):
@@ -245,7 +245,7 @@ class EvolutionController:
                         scores = [r.score for r in generation_program_records if r.score is not None]
                         gen_best_score = max(scores) if scores else None
                         if gen_best_score is not None and gen_best_score > best_score:
-                            self.logger.info("New best score: %.3f (prev: %.3f)", gen_best_score, best_score)
+                            self.logger.info("Best score improved by %.3f! New best score: %.3f (prev: %.3f)", gen_best_score - best_score, gen_best_score, best_score)
                             best_score = gen_best_score
                         
                         # Reset for next generation
