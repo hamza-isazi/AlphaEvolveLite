@@ -3,6 +3,7 @@ import time
 import json
 import random
 import logging
+import math
 from typing import List, cast
 from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
@@ -96,8 +97,17 @@ class LLMEngine:
         
         return content.strip() if content else "", total_tokens
 
-    def generate(self, prompt: str, max_retries: int = 3) -> str:
-        """Generate a response from the LLM with timeout handling and retry logic."""
+    def generate(self, prompt: str, max_retries: int = 5, base_delay: float = 1.0, max_delay: float = 10.0) -> str:
+        """Generate a response from the LLM with timeout handling and retry logic with exponential backoff.
+        Args:
+            max_retries: Maximum number of retries
+            base_delay: Base delay in seconds between retries
+            max_delay: Maximum delay in seconds between retries
+        Returns:
+            The response from the LLM
+        Raises:
+            Exception: If all retries fail
+        """
         # Track response time
         start_time = time.time()
         # Add the user prompt to the conversation
@@ -133,9 +143,16 @@ class LLMEngine:
             except Exception as e:
                 last_exception = e
                 if attempt < max_retries - 1:
+                    # Calculate exponential backoff delay
+                    delay = min(base_delay * (2 ** (attempt + 1)) + random.uniform(0, 1), max_delay)
+                    
                     self.logger.warning(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
+                    self.logger.info(f"Retrying in {delay:.2f} seconds...")
+                    
+                    # Wait before retrying
+                    time.sleep(delay)
                 else:
-                    self.logger.error(f"All {max_retries} attempts failed. Last error: {str(e)}")
+                    self.logger.error(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
                     raise last_exception
     
     def get_used_model(self) -> str:
