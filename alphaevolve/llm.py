@@ -4,7 +4,7 @@ import json
 import random
 import logging
 from typing import List, cast
-from openai import NOT_GIVEN, OpenAI
+from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from .config import LLMCfg, ModelCfg
@@ -83,7 +83,9 @@ class LLMEngine:
         response = self.client.chat.completions.create(
             model=self.selected_model.name,
             messages=self.messages,
-            temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN
+            temperature=self.selected_model.temperature,
+            reasoning_effort=self.selected_model.reasoning_effort,
+            timeout=self.llm_cfg.llm_timeout
         )
         
         content = response.choices[0].message.content

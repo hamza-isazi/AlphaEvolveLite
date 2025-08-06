@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import yaml
 from typing import List, Optional
+from openai import NOT_GIVEN
 
 @dataclass
 class ExpCfg:
@@ -15,7 +16,14 @@ class ModelCfg:
     """Configuration for a single model."""
     name: str
     probability: float
-    temperature: Optional[float] = None
+    temperature: Optional[float] = NOT_GIVEN
+    reasoning_effort: Optional[str] = NOT_GIVEN
+
+    def __post_init__(self):
+        if self.reasoning_effort is not NOT_GIVEN and self.reasoning_effort is not None:
+            valid_efforts = {"low", "medium", "high"}
+            if self.reasoning_effort not in valid_efforts:
+                raise ValueError(f"Model {self.name}: Invalid reasoning_effort '{self.reasoning_effort}'. Must be one of {valid_efforts}.")
 
 
 @dataclass

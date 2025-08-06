@@ -142,7 +142,7 @@ class EvolutionController:
         with progress tracking and logging throughout the process.
         """
         # Initialize evolution parameters
-        max_concurrent = self.cfg.evolution.population_size  # Number of concurrent program generations
+        max_concurrent = 8  # Number of concurrent program generations
         max_total = self.cfg.evolution.max_generations * self.cfg.evolution.population_size  # Total programs to generate
         completed = 0  # Counter for completed program generations
         
@@ -157,11 +157,10 @@ class EvolutionController:
         else:
             completed = 0  # Counter for completed program generations
             
+        self.logger.info("Starting continuous evolution with up to %d concurrent individuals", max_concurrent)
         generation_program_records = []  # Store results for current generation
         task_id_counter = completed  # Unique identifier for each generation task
         gen_pbar = tqdm(total=self.cfg.evolution.population_size, desc=f"Generation {self.current_gen}") # Progress bar for current generation
-
-        self.logger.info("Starting continuous evolution with up to %d concurrent individuals", max_concurrent)
 
         # Helper function to generate a single program and save it to the database
         def generate_and_save_program(task_id):
