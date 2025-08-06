@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 """
 CLI entry-point.
-Run: python scripts/run.py path/to/config.yml [--debug]
+Run: python scripts/run.py path/to/config.yml [--debug] [--resume]
 """
 import sys
 import argparse
@@ -13,6 +13,8 @@ def main():
     parser.add_argument('config', help='Path to configuration YAML file')
     parser.add_argument('--debug', action='store_true', 
                        help='Enable debug logging (verbose individual-level output)')
+    parser.add_argument('--resume', action='store_true',
+                       help='Resume evolution from the current generation in the database')
     
     args = parser.parse_args()
     
@@ -23,7 +25,7 @@ def main():
     cfg.debug = args.debug
     
     # Run evolution
-    EvolutionController(cfg).run_evolution()
+    EvolutionController(cfg, resume=args.resume).run_evolution()
 
 if __name__ == "__main__":
     main()

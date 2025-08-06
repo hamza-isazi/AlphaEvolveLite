@@ -28,7 +28,7 @@ AlphaEvolveLite/
 │   ├── config.py         # Dataclass-backed config loader
 │   └── log.py            # Opinionated logging setup
 ├── scripts/
-│   ├── run.py            # CLI entry-point: `python scripts/run.py config.yml [--debug]`
+│   ├── run.py            # CLI entry-point: `python scripts/run.py config.yml [--debug] [--resume]`
 │   ├── view_conversation.py # View conversation history for programs
 │   ├── visualize_experiment.py # Generate evolution visualization plots
 │   └── README_visualization.md # Visualization documentation
@@ -72,6 +72,9 @@ python scripts/run.py examples/fibonacci/config.yml
 
 # Debug mode with verbose individual-level logging
 python scripts/run.py examples/fibonacci/config.yml --debug
+
+# Resume from the current generation in the database
+python scripts/run.py examples/fibonacci/config.yml --resume
 ```
 
 3. **View Conversation History**

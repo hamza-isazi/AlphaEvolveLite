@@ -133,9 +133,9 @@ class EvolutionaryDatabase:
                 raise RuntimeError("Failed to insert program: lastrowid is None")
             return lastrowid
 
-    def _get_current_generation(self, conn: sqlite3.Connection) -> int:
+    def get_latest_generation(self, conn: sqlite3.Connection) -> int:
         """
-        Get the current generation number (highest generation in the database).
+        Get the latest generation number (highest generation in the database).
         
         Parameters
         ----------
@@ -144,8 +144,8 @@ class EvolutionaryDatabase:
         
         Returns
         -------
-        current_gen : int
-            The current generation number, or 0 if no programs exist.
+        latest_gen : int
+            The latest generation number, or 0 if no programs exist.
         """
         cur = conn.cursor()
         cur.execute(
@@ -229,7 +229,7 @@ class EvolutionaryDatabase:
             Selected inspiration programs (excluding parent).
         """
         # Get current generation
-        current_gen = self._get_current_generation(conn)
+        current_gen = self.get_latest_generation(conn)
         
         # Get all programs from the current generation for this experiment
         cur = conn.cursor()
@@ -297,7 +297,7 @@ class EvolutionaryDatabase:
         programs : List[dict]
             Programs from recent generations
         """
-        current_gen = self._get_current_generation(conn)
+        current_gen = self.get_latest_generation(conn)
         start_gen = max(1, current_gen - num_generations + 1)
         
         cur = conn.cursor()
