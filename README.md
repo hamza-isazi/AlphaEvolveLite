@@ -90,8 +90,23 @@ python scripts/view_conversation.py --list-programs --experiment "fib-baseline-v
 4. **Visualize Results**
 
 ```bash
+# List all available experiments
+python scripts/visualize_experiment.py --db alphaevolve.db --list-experiments
+
 # Generate evolution visualization plots
-python scripts/visualize_experiment.py --experiment "fib-baseline-v1"
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1"
+
+# Save plots to file
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1" --output results/experiment_plot.png
+
+# Limit to first 10 generations
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1" --max-generations 10
+
+# Show only individual plots (not combined)
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1" --individual-only
+
+# Show only combined plot (not individual)
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1" --combined-only
 ```
 
 ## Logging Features
