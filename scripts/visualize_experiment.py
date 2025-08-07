@@ -144,6 +144,75 @@ def get_llm_stats(db_path: str, experiment_id: int, max_generations: int = None)
     return models, score_distributions, differential_distributions, success_rates
 
 
+def get_best_score_progression(db_path: str, experiment_id: int, max_generations: int = None) -> list:
+    """Get the best score progression over time, showing which model produced each improvement."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    
+    cursor = conn.cursor()
+    
+    # Get all programs ordered by id (chronological order) with valid scores
+    if max_generations is None:
+        cursor.execute("""
+            SELECT id, gen, used_model, score
+            FROM programs
+            WHERE experiment_id = ? AND score IS NOT NULL
+            ORDER BY id
+        """, (experiment_id,))
+    else:
+        cursor.execute("""
+            SELECT id, gen, used_model, score
+            FROM programs
+            WHERE experiment_id = ? AND score IS NOT NULL AND gen <= ?
+            ORDER BY id
+        """, (experiment_id, max_generations))
+    
+    programs = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    # Find programs that represent improvements (better than any previous program)
+    best_score_progression = []
+    best_score_so_far = float('-inf')
+    
+    for program in programs:
+        if program['score'] > best_score_so_far:
+            best_score_so_far = program['score']
+            best_score_progression.append(program)
+    
+    return best_score_progression
+
+
+def plot_best_score_progression(ax, progression_data, title):
+    """Plot the best score progression over time with model labels."""
+    if not progression_data:
+        ax.text(0.5, 0.5, 'No progression data\navailable', ha='center', va='center', transform=ax.transAxes)
+        ax.set_title(title)
+        return
+    
+    # Extract data
+    gens = [p['gen'] for p in progression_data]
+    scores = [p['score'] for p in progression_data]
+    models = [p['used_model'] for p in progression_data]
+    
+    # Plot the line
+    ax.plot(gens, scores, '-o', linewidth=2, markersize=6, color='blue', alpha=0.7)
+    
+    # Add model labels for each point
+    for i, (gen, score, model) in enumerate(zip(gens, scores, models)):
+        if model:
+            # Strip model name to exclude characters before slash
+            display_model = model.split('/')[-1] if '/' in model else model
+            
+            # Position label above the point with 45 degree rotation
+            ax.annotate(display_model, (gen, score), 
+                       xytext=(0, 10), textcoords='offset points',
+                       fontsize=8, rotation=90,
+                       bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+    
+    setup_plot_common(ax, 'Generation', 'Score', title)
+    ax.grid(True, alpha=0.3)
+
+
 def group_data_by_generation(programs: list, key: str, filter_successful: bool = True):
     """Helper function to group data by generation and calculate statistics."""
     data_to_use = [p for p in programs if p['failure_type'] is None] if filter_successful else programs
@@ -363,8 +432,8 @@ def create_success_rate_plot(ax, models, success_rates, title, fontsize=8):
                 f'{value:.1f}%', ha='center', va='bottom', fontsize=fontsize)
 
 
-def plot_llm_comparison(ax1, ax2, ax3, models, score_distributions, differential_distributions, success_rates):
-    """Create violin plots and bar plot for LLM comparison."""
+def plot_llm_comparison(ax1, ax2, ax3, ax4, models, score_distributions, differential_distributions, success_rates, best_score_progression=None):
+    """Create 2x2 grid of violin plots and bar plot for LLM comparison."""
     # Plot 1: Score distribution per LLM
     create_violin_plot(ax1, score_distributions, models, 'Score Distribution per LLM', 'Score', 'skyblue', 8)
     
@@ -373,6 +442,14 @@ def plot_llm_comparison(ax1, ax2, ax3, models, score_distributions, differential
     
     # Plot 3: Success rate per LLM
     create_success_rate_plot(ax3, models, success_rates, 'Success Rate per LLM', 8)
+    
+    # Plot 4: Best score progression
+    if best_score_progression:
+        plot_best_score_progression(ax4, best_score_progression, 'Best Score Progression')
+    else:
+        ax4.text(0.5, 0.5, 'Best Score Progression\n(no data available)', ha='center', va='center', transform=ax4.transAxes)
+        ax4.set_title('Best Score Progression')
+        ax4.axis('off')
 
 
 def create_visualization(programs: list, experiment_label: str, output_path: str | None = None, 
@@ -495,11 +572,14 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     
     models, score_distributions, differential_distributions, success_rates = get_llm_stats(db_path, experiment_id, max_generations)
     
-    # Create a new figure for LLM comparison
-    fig_llm, (ax_llm1, ax_llm2, ax_llm3) = plt.subplots(1, 3, figsize=(20, 6))
+    # Get best score progression data
+    best_score_progression = get_best_score_progression(db_path, experiment_id, max_generations)
+    
+    # Create a new figure for LLM comparison (2x2 layout)
+    fig_llm, ((ax_llm1, ax_llm2), (ax_llm3, ax_llm4)) = plt.subplots(2, 2, figsize=(16, 12))
     
     # Plot LLM comparison
-    plot_llm_comparison(ax_llm1, ax_llm2, ax_llm3, models, score_distributions, differential_distributions, success_rates)
+    plot_llm_comparison(ax_llm1, ax_llm2, ax_llm3, ax_llm4, models, score_distributions, differential_distributions, success_rates, best_score_progression)
     
     # Add overall title
     fig_llm.suptitle(f'LLM Performance Comparison - {experiment_label}', fontsize=16, y=0.98)
@@ -522,14 +602,11 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
         create_individual_plots(programs, experiment_label, output_path)
     
     # Create individual LLM comparison plots if requested
-    if show_individual and db_path and experiment_id:
-        try:
-            create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, experiment_label, output_path)
-        except Exception as e:
-            print(f"Error creating individual LLM plots: {str(e)}")
+    if show_individual:
+        create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, best_score_progression, experiment_label, output_path, db_path, experiment_id, max_generations)
 
 
-def create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, experiment_label: str, output_path: str | None = None):
+def create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, best_score_progression, experiment_label: str, output_path: str | None = None, db_path: str = None, experiment_id: int = None, max_generations: int = None):
     """Create individual plots for LLM comparison metrics."""
     if not models:
         return
@@ -576,6 +653,21 @@ def create_individual_llm_plots(models, score_distributions, differential_distri
         individual_path = base_path.parent / f"{base_path.stem}_llm_success_rate{base_path.suffix}"
         plt.savefig(individual_path, dpi=300, bbox_inches='tight')
         print(f"Individual LLM success rate plot saved to: {individual_path}")
+    else:
+        plt.show()
+    
+    plt.close()
+    
+    # Create individual best score progression plot    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    plot_best_score_progression(ax, best_score_progression, f'Best Score Progression - {experiment_label}')
+    plt.tight_layout()
+    
+    if output_path:
+        base_path = Path(output_path)
+        individual_path = base_path.parent / f"{base_path.stem}_llm_best_score_progression{base_path.suffix}"
+        plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+        print(f"Individual best score progression plot saved to: {individual_path}")
     else:
         plt.show()
     
