@@ -97,7 +97,7 @@ class LLMEngine:
         
         return content.strip() if content else "", total_tokens
 
-    def generate(self, prompt: str, max_retries: int = 5, base_delay: float = 1.0, max_delay: float = 10.0) -> str:
+    def generate(self, prompt: str, max_retries: int = 5, base_delay: float = 1.0, max_delay: float = 30.0) -> str:
         """Generate a response from the LLM with timeout handling and retry logic with exponential backoff.
         Args:
             max_retries: Maximum number of retries

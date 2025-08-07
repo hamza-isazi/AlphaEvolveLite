@@ -181,13 +181,13 @@ class EvolutionController:
                 result = generate_program(
                     task_id,
                     (parent_row, inspiration_rows),
-                    self.current_gen,
                     self.cfg,
                     self.logger,
                     self.context.client
                 )
                 
                 # Store the generated program in the database
+                result.gen = self.current_gen
                 program_id = self.context.database.add(result)
                 
                 # Log the result based on whether generation was successful

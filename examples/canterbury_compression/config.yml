@@ -13,9 +13,9 @@ llm:
     # - name: openai/gpt-4.1
     #   probability: 0.05
     #   temperature: 0.7
-    - name: openai/o4-mini-high
-      probability: 0.05
-      retry_model: google/gemini-2.5-flash
+    # - name: openai/o4-mini-high
+    #   probability: 0.05
+    #   retry_model: google/gemini-2.5-flash
     - name: openai/gpt-4.1-mini
       probability: 0.05
       temperature: 0.7
@@ -24,7 +24,7 @@ llm:
     #   probability: 0.1
     #   temperature: 0.7
     - name: openai/gpt-oss-120b
-      probability: 0.05
+      probability: 0.1
       temperature: 0.7
     
     # Google Gemini models - strong reasoning capabilities, decent cost
@@ -62,9 +62,9 @@ llm:
       probability: 0.05
       temperature: 0.7
 
-    - name: deepseek/deepseek-r1:free
-      probability: 0.05
-      temperature: 0.7
+    # - name: deepseek/deepseek-r1:free
+    #   probability: 0.05
+    #   temperature: 0.7
 
     # Qwen3 is one of the best models for code generation and is quite cheap
     - name: qwen/qwen3-coder
@@ -84,7 +84,7 @@ llm:
 
     # Horizon, is great for code generation, free
     - name: openrouter/horizon-beta
-      probability: 0.05
+      probability: 0.1
       temperature: 0.7
 
     # Grok4 is supposed to be one of the most powerful models out there, but quite expensive
@@ -97,11 +97,13 @@ llm:
     - name: moonshotai/kimi-k2:free
       probability: 0.05
       temperature: 0.7
+      retry_model: google/gemini-2.5-flash
 
     # GLM-4.5 is a large model and quite cheap
     - name: z-ai/glm-4.5
       probability: 0.05
       temperature: 0.7
+      retry_model: google/gemini-2.5-flash
     
   system_prompt: |
     You are tasked with implementing a Python text compression algorithm.
@@ -126,7 +128,7 @@ evolution:
   temperature: 1.5
   max_generations: 100
   inspiration_count: 2        # number of inspirations to use in each generation
-  max_retries: 3              # number of retries for failed program generation
+  max_retries: 5              # number of retries for failed program generation
   eval_timeout: 600.0         # timeout in seconds for evaluation runs (0 = no timeout)
   enable_feedback: false      # Enable LLM-generated feedback for successful programs
   selection_method: enhanced_inspiration  # Method: "boltzmann", "top_k_and_random", or "enhanced_inspiration"

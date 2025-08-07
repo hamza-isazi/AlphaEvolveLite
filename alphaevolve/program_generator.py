@@ -134,7 +134,6 @@ def generate_retry_response(context: ProgramGenerationContext, record: ProgramRe
 def generate_program(
     individual_id: int, 
     parent_data: Tuple[dict, List[dict]], 
-    current_gen: int,
     cfg: Config,
     logger: logging.Logger,
     client: OpenAI
@@ -160,7 +159,6 @@ def generate_program(
         code=parent_row["code"],
         explanation="",
         score=None,
-        gen=current_gen,
         parent_id=parent_row["id"],
         used_model=context.llm_instance.get_used_model()
     )
@@ -184,8 +182,8 @@ def generate_program(
     for retry_count in range(context.max_retries + 1):                
         try:
             if retry_count > 0:
-                context.logger.debug("Gen %d, Individual %d: %s, retrying (%d/%d): %s", 
-                            current_gen, individual_id, record.failure_type, retry_count, context.max_retries, record.error_message)
+                context.logger.debug("Individual %d: %s, retrying (%d/%d): %s", 
+                            individual_id, record.failure_type, retry_count, context.max_retries, record.error_message)
                 
                 # Generate a retry response
                 code_response = generate_retry_response(context, record)
@@ -234,8 +232,8 @@ def generate_program(
             feedback_prompt = context.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs, cfg.problem_eval)
             record.feedback = context.llm_instance.generate(feedback_prompt)
         except Exception as e:
-            context.logger.error("Gen %d, Individual %d: failed to generate feedback: %s", 
-                                current_gen, individual_id, str(e))
+            context.logger.error("Individual %d: failed to generate feedback: %s", 
+                                individual_id, str(e))
     
     # Get final metrics
     record.total_llm_time, record.total_tokens = context.llm_instance.get_metrics()
