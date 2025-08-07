@@ -7,7 +7,7 @@ experiment:
 
 llm:
   provider: openrouter
-  llm_timeout: 600.0  # Global timeout for all LLM requests
+  llm_timeout: 300.0  # Global timeout for all LLM requests
   models:
     # OpenAI models - high performance, reliable
     # - name: openai/gpt-4.1
@@ -29,7 +29,7 @@ llm:
     
     # Google Gemini models - strong reasoning capabilities, decent cost
     - name: google/gemini-2.5-pro
-      probability: 0.1
+      probability: 0.25
       temperature: 0.7
       retry_model: google/gemini-2.5-flash
     - name: google/gemini-2.5-flash
@@ -52,10 +52,10 @@ llm:
       temperature: 0.7
       retry_model: google/gemini-2.5-flash
 
-    - name: anthropic/claude-3.5-haiku
-      probability: 0.05
-      temperature: 0.7
-      retry_model: google/gemini-2.5-flash
+    # - name: anthropic/claude-3.5-haiku
+    #   probability: 0.05
+    #   temperature: 0.7
+    #   retry_model: google/gemini-2.5-flash
 
     # DeepSeek models - strong reasoning capabilities, free, and should be quite diverse
     - name: deepseek/deepseek-chat-v3-0324:free
@@ -81,11 +81,13 @@ llm:
     - name: meta-llama/llama-4-maverick
       probability: 0.05
       temperature: 0.7
+      retry_model: google/gemini-2.5-flash
 
-    # Horizon, is great for code generation, free
-    - name: openrouter/horizon-beta
-      probability: 0.1
-      temperature: 0.7
+    # # Horizon, is great for code generation, but unavailable atm
+    # - name: openrouter/horizon-beta
+    #   probability: 0.1
+    #   temperature: 0.7
+    #   retry_model: google/gemini-2.5-flash
 
     # Grok4 is supposed to be one of the most powerful models out there, but quite expensive
     - name: x-ai/grok-4
@@ -129,7 +131,7 @@ evolution:
   max_generations: 100
   inspiration_count: 2        # number of inspirations to use in each generation
   max_retries: 5              # number of retries for failed program generation
-  eval_timeout: 600.0         # timeout in seconds for evaluation runs (0 = no timeout)
+  eval_timeout: 1800.0         # timeout in seconds for evaluation runs (0 = no timeout)
   enable_feedback: false      # Enable LLM-generated feedback for successful programs
   selection_method: enhanced_inspiration  # Method: "boltzmann", "top_k_and_random", or "enhanced_inspiration"
   recent_generations: 5       # Number of recent generations to consider for inspiration selection

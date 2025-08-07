@@ -64,6 +64,8 @@ TEMPLATE = """\
     >>>>>>> REPLACE
     ```
 
+    **IMPORTANT: If you need to change more than 50 contiguous lines or you aren't certain the SEARCH text will match exactly, ignore the SEARCH/REPLACE option and output the *entire new solution.py wrapped in one fenced code-block (Option 1). Do not include any diff markers in that case.**
+
     If using the SEARCH/REPLACE format, please follow these rules:
     ### SEARCH/REPLACE block rules
     {evolve_instructions}
@@ -91,7 +93,7 @@ Failed with the following error:
 
 {failure_type}: {error_message}
 
-Please correct the issue with new code changes using SEARCH/REPLACE or Full File Replacement format.
+Please correct the issue with new code changes using either the SEARCH/REPLACE or Full File Replacement format.
 Your code changes will be applied to the new code shown above."""
 
 EVOLVE_INSTRUCTIONS = """\
@@ -150,7 +152,6 @@ class PromptSampler:
             explanation = r.get('explanation', 'No explanation provided')
             feedback = r.get('feedback')
             
-            # Make the score more prominent
             program_text = f"**Score: {r['score']:.3f}**\nExplanation: {explanation}\n```\n{r['code']}\n```"
             
             if include_feedback and feedback:
