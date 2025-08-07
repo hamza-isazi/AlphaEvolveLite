@@ -9,6 +9,7 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from .config import LLMCfg, ModelCfg
 from .utils import timeout
+from dotenv import load_dotenv
 
 class LLMEngine:
     """LLM engine with conversation management and internal metric tracking."""
@@ -137,6 +138,7 @@ class LLMEngine:
 
 def create_llm_client(llm_cfg: LLMCfg) -> OpenAI:
     """Create the appropriate OpenAI client based on provider."""
+    load_dotenv()
     if llm_cfg.provider.lower() == "openai":
         api_key = os.getenv("OPENAI_API_KEY")
         if not api_key:

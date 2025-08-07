@@ -7,6 +7,8 @@ import sys
 import argparse
 from alphaevolve.config import Config
 from alphaevolve.controller import EvolutionController
+import multiprocessing
+multiprocessing.set_start_method("fork", force=True)
 
 def main():
     parser = argparse.ArgumentParser(description='Run AlphaEvolve evolution experiment')
