@@ -186,8 +186,10 @@ class EvolutionController:
                     self.context.client
                 )
                 
-                # Store the generated program in the database
+                # Set the generation number for the result here because we might have moved on to the next generation
+                # since the program generation might have taken a while
                 result.gen = self.current_gen
+                # Store the generated program in the database
                 program_id = self.context.database.add(result)
                 
                 # Log the result based on whether generation was successful
@@ -223,6 +225,10 @@ class EvolutionController:
                     # Store program if successful
                     if result:
                         generation_program_records.append(result)
+                        # Check if this program produced a new best score
+                        if result.score is not None and result.score > best_score:
+                            self.logger.info("Best score improved by %.3f! New best score: %.3f (prev: %.3f)", result.score - best_score, result.score, best_score)
+                            best_score = result.score
                     # Update progress
                     completed += 1
                     gen_pbar.update(1)
@@ -239,13 +245,6 @@ class EvolutionController:
                         
                         # Move to next generation
                         self.current_gen += 1
-                        
-                        # Check if this generation produced a new best score
-                        scores = [r.score for r in generation_program_records if r.score is not None]
-                        gen_best_score = max(scores) if scores else None
-                        if gen_best_score is not None and gen_best_score > best_score:
-                            self.logger.info("Best score improved by %.3f! New best score: %.3f (prev: %.3f)", gen_best_score - best_score, gen_best_score, best_score)
-                            best_score = gen_best_score
                         
                         # Reset for next generation
                         generation_program_records.clear()

@@ -146,7 +146,7 @@ class LLMEngine:
                     # Calculate exponential backoff delay
                     delay = min(base_delay * (2 ** (attempt + 1)) + random.uniform(0, 1), max_delay)
                     
-                    self.logger.warning(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
+                    self.logger.info(f"LLM Generation Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
                     self.logger.info(f"Retrying in {delay:.2f} seconds...")
                     
                     # Wait before retrying
