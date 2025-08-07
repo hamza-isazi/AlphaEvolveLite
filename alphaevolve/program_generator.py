@@ -15,6 +15,56 @@ from .config import Config
 from .response_parser import parse_code_response
 from .db import ProgramRecord
 
+
+def compile_with_context(code: str, filename: str = "<candidate>", num_context_lines: int = 5) -> None:
+    """
+    Compile code with enhanced error reporting that includes context lines.
+    
+    Args:
+        code: The Python code to compile
+        filename: The filename to use for compilation (for error reporting)
+        num_context_lines: The number of lines of context to include above and below the error line
+    
+    Raises:
+        SyntaxError: If compilation fails, with enhanced error message including context
+    """
+    try:
+        compile(code, filename, "exec")
+    except SyntaxError as e:
+        # Extract line number from the error
+        if hasattr(e, 'lineno') and e.lineno is not None:
+            line_num = e.lineno
+            lines = code.split('\n')
+            
+            # Calculate context range (5 lines above and below)
+            start_line = max(0, line_num - num_context_lines - 1)  # -6 because line numbers are 1-indexed
+            end_line = min(len(lines), line_num + num_context_lines)
+            
+            # Build context message
+            context_lines = []
+            for i in range(start_line, end_line):
+                line_content = lines[i] if i < len(lines) else ""
+                line_num_display = i + 1
+                
+                if line_num_display == line_num:
+                    # Mark the error line with an arrow
+                    context_lines.append(f"{line_num_display:4d} >>> {line_content}")
+                else:
+                    context_lines.append(f"{line_num_display:4d}     {line_content}")
+            
+            context_message = "\n".join(context_lines)
+            
+            # Create enhanced error message
+            enhanced_msg = f"Syntax error at line {line_num}: {str(e.msg)}\n{context_message}"
+            
+            # Create new SyntaxError with enhanced message
+            new_error = SyntaxError(enhanced_msg)
+            raise new_error
+        else:
+            # If we can't extract line number, just re-raise the original error
+            raise
+
+
 @dataclass
 class ProgramGenerationContext:
     """Context object containing all dependencies needed for program generation."""
@@ -142,7 +192,7 @@ def generate_program(
 
             # Apply the patch to the code only if it compiles (no syntax errors or bad imports)
             new_code = context.patcher.apply_diff(record.code, code_response)
-            compile(new_code, "<candidate>", "exec")
+            compile_with_context(new_code)
             record.code = new_code
             
             # Write to temp file for evaluation
