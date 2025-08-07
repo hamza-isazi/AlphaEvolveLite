@@ -5,7 +5,7 @@ import random
 import logging
 import math
 from typing import List, cast
-from openai import OpenAI
+from openai import OpenAI, NOT_GIVEN
 from openai.types.chat import ChatCompletionMessageParam
 
 from .config import LLMCfg, ModelCfg
@@ -42,18 +42,18 @@ class LLMEngine:
         )[0]
 
     def select_retry_model(self) -> None:
-        """Select a model specifically for retries and feedback, also removes temperature if specified.
-        If retry_model is specified in config, use that model."""
+        """Select a model specifically for retries and feedback, also unsets temperature if specified
+        (temperature encourages creativity and tends to be less reliable for retries).
+        If the current model has a retry_model specified, use that model. Otherwise, keep the current model."""
         
-        if self.llm_cfg.retry_model:
+        if self.selected_model.retry_model:
             for model in self.llm_cfg.models:
-                if model.name == self.llm_cfg.retry_model:
+                if model.name == self.selected_model.retry_model:
                     self.selected_model = model
-                    self.selected_model.temperature = None
+                    self.selected_model.temperature = NOT_GIVEN
                     return
-            self.logger.warning(f"Retry model '{self.llm_cfg.retry_model}' not found in available models, keeping current model")
         else:
-            self.selected_model.temperature = None
+            self.selected_model.temperature = NOT_GIVEN
 
     def add_message(self, role: str, content: str) -> None:
         """Add a message to the conversation history."""

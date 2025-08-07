@@ -12,10 +12,11 @@ llm:
     - name: gemini-2.5-flash
       probability: 0.9
       temperature: 0.8
+      retry_model: gemini-2.5-flash-lite # Use the faster model for retries and feedback
     - name: gemini-2.5-pro
       probability: 0.1
       temperature: 0.9
-  retry_model: gemini-2.5-flash-lite # Use the faster model for retries and feedback
+      retry_model: gemini-2.5-flash-lite # Use the faster model for retries and feedback
 
 evolution:
   population_size: 40

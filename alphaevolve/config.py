@@ -18,6 +18,7 @@ class ModelCfg:
     probability: float
     temperature: Optional[float] = NOT_GIVEN
     reasoning_effort: Optional[str] = NOT_GIVEN
+    retry_model: Optional[str] = None  # Model name to use for retries and feedback for this specific model (if None, reuses the same model)
 
     def __post_init__(self):
         if self.reasoning_effort is not NOT_GIVEN and self.reasoning_effort is not None:
@@ -31,7 +32,6 @@ class LLMCfg:
     provider: str
     models: List[ModelCfg]
     system_prompt: str = "You are an expert software developer evolving Python code using diffs."
-    retry_model: Optional[str] = None  # Model name to use for retries and feedback (if None, uses same model selection logic)
     llm_timeout: float = 120.0  # Global timeout in seconds for LLM API calls
 
 
@@ -75,11 +75,16 @@ class Config:
         if total_probability != 1.0:
             raise ValueError(f"The sum of probabilities for the models must be 1.0, but is {total_probability}")
 
+        # Validate that retry_model references exist
+        model_names = {model.name for model in models}
+        for model in models:
+            if model.retry_model and model.retry_model not in model_names:
+                raise ValueError(f"Model {model.name}: retry_model '{model.retry_model}' not found in available models")
+
         llm_cfg = LLMCfg(
             provider=llm_data["provider"],
             models=models,
             system_prompt=llm_data.get("system_prompt", "You are an expert software developer evolving Python code using diffs."),
-            retry_model=llm_data.get("retry_model"),
             llm_timeout=llm_data.get("llm_timeout", 300.0)
         )
         

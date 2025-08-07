@@ -173,15 +173,16 @@ For each generation, the system randomly selects a model based on the configured
 - Balance cost and performance based on your needs
 
 ### Retry Model Configuration
-You can specify a dedicated model for retries and feedback using the `retry_model` parameter:
+You can specify a dedicated model for retries and feedback **per model** using the `retry_model` parameter:
 - **Retries**: When initial program generation fails, the system uses the retry model to generate improved versions
 - **Feedback**: For successful programs, the retry model generates feedback to help guide future evolution
-- **Fallback**: If no retry model is specified, the system uses the normal model selection logic
+- **Fallback**: If no retry model is specified for a model, the system uses the same model for retries and feedback
 
 This is useful for:
 - Using more capable models for error correction and feedback
-- Reducing costs by using cheaper models for initial generation
+- Reducing costs by using cheaper models for initial generation and more expensive models only for fixing errors
 - Ensuring high-quality feedback from the most capable available model
+- Lowering costs on models that don't support prompt caching or are just expensive to run
 
 ### Tabu Search Configuration
 AlphaEvolveLite implements a tabu search inspired approach to program generation that helps escape local optima:
@@ -236,10 +237,11 @@ llm:
     - name: gpt-4o-mini
       probability: 0.7
       temperature: 0.9
+      retry_model: gpt-4o  # Use more capable model for retries and feedback
     - name: gpt-4o
       probability: 0.3
       temperature: 0.8
-  retry_model: gpt-4o  # Use more capable model for retries and feedback
+      # No retry_model specified - will use same model for retries and feedback
   system_prompt: |
     You are an expert software engineer solving the following challenge:
     [Your problem description here]

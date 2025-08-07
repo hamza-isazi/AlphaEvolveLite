@@ -15,6 +15,7 @@ llm:
     #   temperature: 0.7
     - name: openai/o4-mini-high
       probability: 0.05
+      retry_model: google/gemini-2.5-flash
     - name: openai/gpt-4.1-mini
       probability: 0.05
       temperature: 0.7
@@ -30,12 +31,15 @@ llm:
     - name: google/gemini-2.5-pro
       probability: 0.1
       temperature: 0.7
+      retry_model: google/gemini-2.5-flash
     - name: google/gemini-2.5-flash
       probability: 0.1
       temperature: 0.7
+      reasoning_effort: medium
     - name: google/gemini-2.5-flash-lite
       probability: 0.05
       temperature: 0.7
+      reasoning_effort: medium
     
     # Anthropic Claude models - excellent for complex reasoning, high cost
     # Opus is a bit too expensive and not very accurate for this experiment, replaced by Grok4
@@ -46,10 +50,12 @@ llm:
     - name: anthropic/claude-sonnet-4
       probability: 0.05
       temperature: 0.7
+      retry_model: google/gemini-2.5-flash
 
     - name: anthropic/claude-3.5-haiku
       probability: 0.05
       temperature: 0.7
+      retry_model: google/gemini-2.5-flash
 
     # DeepSeek models - strong reasoning capabilities, free, and should be quite diverse
     - name: deepseek/deepseek-chat-v3-0324:free
@@ -69,6 +75,7 @@ llm:
     - name: mistralai/codestral-2508
       probability: 0.05
       temperature: 0.7
+      retry_model: google/gemini-2.5-flash
 
     # Maverick is high capacity and quite cheap because of MoE
     - name: meta-llama/llama-4-maverick
@@ -84,6 +91,7 @@ llm:
     - name: x-ai/grok-4
       probability: 0.05
       temperature: 0.7
+      retry_model: google/gemini-2.5-flash
 
     # Kimi-K2 is a good model for code generation and free
     - name: moonshotai/kimi-k2:free
@@ -94,8 +102,6 @@ llm:
     - name: z-ai/glm-4.5
       probability: 0.05
       temperature: 0.7
-
-  retry_model: qwen/qwen3-coder # Qwen3 is a nice balance between cost and reliability
     
   system_prompt: |
     You are tasked with implementing a Python text compression algorithm.
@@ -119,7 +125,7 @@ evolution:
   population_size: 20
   temperature: 1.5
   max_generations: 100
-  inspiration_count: 4        # number of inspirations to use in each generation
+  inspiration_count: 2        # number of inspirations to use in each generation
   max_retries: 3              # number of retries for failed program generation
   eval_timeout: 600.0         # timeout in seconds for evaluation runs (0 = no timeout)
   enable_feedback: false      # Enable LLM-generated feedback for successful programs
