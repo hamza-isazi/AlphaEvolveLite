@@ -7,18 +7,16 @@ experiment:
 
 llm:
   provider: openai
+  llm_timeout: 40.0  # Global timeout for all LLM requests
   models:
     - name: gpt-4o-mini
       probability: 0.7
       temperature: 0.9
-      llm_timeout: 30.0
     - name: gpt-4o
       probability: 0.2
       temperature: 0.9
-      llm_timeout: 30.0
     - name: o4-mini
       probability: 0.1
-      llm_timeout: 60.0
   system_prompt: |
     You are an expert software engineer solving the following challenge:
 

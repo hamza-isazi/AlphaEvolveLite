@@ -28,7 +28,7 @@ AlphaEvolveLite/
 │   ├── config.py         # Dataclass-backed config loader
 │   └── log.py            # Opinionated logging setup
 ├── scripts/
-│   ├── run.py            # CLI entry-point: `python scripts/run.py config.yml [--debug]`
+│   ├── run.py            # CLI entry-point: `python scripts/run.py config.yml [--debug] [--resume]`
 │   ├── view_conversation.py # View conversation history for programs
 │   ├── visualize_experiment.py # Generate evolution visualization plots
 │   └── README_visualization.md # Visualization documentation
@@ -72,6 +72,9 @@ python scripts/run.py examples/fibonacci/config.yml
 
 # Debug mode with verbose individual-level logging
 python scripts/run.py examples/fibonacci/config.yml --debug
+
+# Resume from the current generation in the database
+python scripts/run.py examples/fibonacci/config.yml --resume
 ```
 
 3. **View Conversation History**
@@ -90,8 +93,23 @@ python scripts/view_conversation.py --list-programs --experiment "fib-baseline-v
 4. **Visualize Results**
 
 ```bash
+# List all available experiments
+python scripts/visualize_experiment.py --db alphaevolve.db --list-experiments
+
 # Generate evolution visualization plots
-python scripts/visualize_experiment.py --experiment "fib-baseline-v1"
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1"
+
+# Save plots to file
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1" --output results/experiment_plot.png
+
+# Limit to first 10 generations
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1" --max-generations 10
+
+# Show only individual plots (not combined)
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1" --individual-only
+
+# Show only combined plot (not individual)
+python scripts/visualize_experiment.py --db alphaevolve.db --experiment "fib-baseline-v1" --combined-only
 ```
 
 ## Logging Features
@@ -213,15 +231,14 @@ experiment:
 
 llm:
   provider: openai
+  llm_timeout: 120.0  # Global timeout for all LLM requests
   models:
     - name: gpt-4o-mini
       probability: 0.7
       temperature: 0.9
-      llm_timeout: 120.0
     - name: gpt-4o
       probability: 0.3
       temperature: 0.8
-      llm_timeout: 120.0
   retry_model: gpt-4o  # Use more capable model for retries and feedback
   system_prompt: |
     You are an expert software engineer solving the following challenge:

@@ -41,9 +41,8 @@ class PatchApplier:
         
         if match:
             return match.group(1)
-        
-        # If no proper code block found, return the original text
-        return text
+        else:
+            raise PatchError(f"No code block found in response: {repr(text[:100])}...")
 
     @staticmethod
     def _remove_right_whitespace(text: str) -> str:

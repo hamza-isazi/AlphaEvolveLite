@@ -3,9 +3,9 @@
 Script to visualize score vs generation for a given experiment.
 
 Usage:
-    python scripts/visualize_experiment.py --experiment "experiment_label"
-    python scripts/visualize_experiment.py --experiment "experiment_label" --output plot.png
-    python scripts/visualize_experiment.py --list-experiments
+    python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label"
+    python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --output plot.png
+    python scripts/visualize_experiment.py --db alphaevolve.db --list-experiments
 """
 
 import argparse
@@ -15,6 +15,7 @@ import numpy as np
 from pathlib import Path
 import sys
 import os
+from scipy import stats
 
 # Add the parent directory to the path so we can import alphaevolve
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -56,6 +57,91 @@ def get_experiment_data(db_path: str, experiment_id: int) -> list:
     programs = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return programs
+
+
+def get_llm_stats(db_path: str, experiment_id: int, max_generations: int = None) -> tuple:
+    """Get score distributions per LLM and success rate per LLM for a specific experiment.
+    If max_generations is specified, only include programs up to that generation."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    
+    cursor = conn.cursor()
+    
+    # Get all programs for the specific experiment with their used model and parent info
+    if max_generations is None:
+        cursor.execute("""
+            SELECT p.id, p.score, p.failure_type, p.used_model, p.parent_id, p.gen
+            FROM programs p
+            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL
+        """, (experiment_id,))
+    else:
+        cursor.execute("""
+            SELECT p.id, p.score, p.failure_type, p.used_model, p.parent_id, p.gen
+            FROM programs p
+            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL AND p.gen <= ?
+        """, (experiment_id, max_generations))
+    
+    programs = [dict(row) for row in cursor.fetchall()]
+    
+    # Get parent scores for programs with parents
+    parent_ids = [p['parent_id'] for p in programs if p['parent_id'] is not None]
+    parent_scores = {}
+    if parent_ids:
+        # Use a safer approach with multiple queries or proper parameterization
+        for parent_id in parent_ids:
+            cursor.execute("""
+                SELECT id, score
+                FROM programs
+                WHERE id = ?
+            """, (parent_id,))
+            result = cursor.fetchone()
+            if result:
+                parent_scores[result['id']] = result['score']
+    
+    conn.close()
+    
+    # Group by used model
+    model_stats = {}
+    for program in programs:
+        model = program['used_model']
+        if model not in model_stats:
+            model_stats[model] = {'scores': [], 'differentials': [], 'successful': 0, 'total': 0}
+        
+        if program['score'] is not None:  # Only include programs with valid scores
+            model_stats[model]['scores'].append(program['score'])
+            
+            # Calculate score differential if parent exists and has valid score
+            if program['parent_id'] is not None and program['parent_id'] in parent_scores:
+                parent_score = parent_scores[program['parent_id']]
+                if parent_score is not None:
+                    differential = program['score'] - parent_score
+                    model_stats[model]['differentials'].append(differential)
+        
+        model_stats[model]['total'] += 1
+        if program['failure_type'] is None:
+            model_stats[model]['successful'] += 1
+    
+    # Prepare score distributions, differential distributions, and success rates
+    models = []
+    score_distributions = []
+    differential_distributions = []
+    success_rates = []
+    
+    for model, stats in model_stats.items():
+        models.append(model)
+        if stats['scores']:
+            score_distributions.append(stats['scores'])
+        else:
+            score_distributions.append([])  # No valid scores for this model
+        
+        if stats['differentials']:
+            differential_distributions.append(stats['differentials'])
+        else:
+            differential_distributions.append([])  # No valid differentials for this model
+        
+        success_rates.append((stats['successful'] / stats['total']) * 100)
+    
+    return models, score_distributions, differential_distributions, success_rates
 
 
 def group_data_by_generation(programs: list, key: str, filter_successful: bool = True):
@@ -207,12 +293,100 @@ def plot_generation_time_distribution(ax, generation_times, title):
     ax.legend()
 
 
+def create_violin_plot(ax, distributions, models, title, ylabel, color='skyblue', fontsize=8):
+    """Helper function to create a violin plot with consistent styling."""
+    # Filter out empty distributions
+    valid_models = []
+    valid_distributions = []
+    for model, distribution in zip(models, distributions):
+        if distribution:  # Only include models with valid data
+            valid_models.append(model)
+            valid_distributions.append(distribution)
+    
+    if valid_distributions:
+        violin_parts = ax.violinplot(valid_distributions, showmeans=True, showmedians=True)
+        
+        # Color the violins
+        for pc in violin_parts['bodies']:
+            pc.set_facecolor(color)
+            pc.set_alpha(0.7)
+        
+        # Color the mean and median lines
+        violin_parts['cmeans'].set_color('red')
+        violin_parts['cmeans'].set_linewidth(2)
+        violin_parts['cmedians'].set_color('orange')
+        violin_parts['cmedians'].set_linewidth(2)
+        
+        ax.set_xlabel('LLM Model')
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.legend(
+            handles=[violin_parts['cmeans'], violin_parts['cmedians']],
+            labels=['Mean', 'Median']
+        )
+
+
+        # Set x-axis labels properly
+        ax.set_xticks(range(1, len(valid_models) + 1))
+        ax.set_xticklabels(valid_models, rotation=45, ha='right')
+        ax.grid(True, alpha=0.3)
+        
+        # Add sample size annotations
+        for i, distribution in enumerate(valid_distributions):
+            # Position the text below the top of the plot with some margin
+            y_pos = ax.get_ylim()[1] - (ax.get_ylim()[1] - ax.get_ylim()[0]) * 0.05
+            ax.text(i+1, y_pos, f'n={len(distribution)}', 
+                    ha='center', va='bottom', fontsize=fontsize, 
+                    bbox=dict(boxstyle='round,pad=0.3', facecolor='white', alpha=0.8))
+        return True
+    else:
+        ax.text(0.5, 0.5, 'No valid data\navailable', ha='center', va='center', transform=ax.transAxes)
+        ax.set_title(title)
+        return False
+
+
+def create_success_rate_plot(ax, models, success_rates, title, fontsize=8):
+    """Helper function to create a success rate bar plot with consistent styling."""
+    bars = ax.bar(range(len(models)), success_rates, color='lightgreen', alpha=0.7, edgecolor='black')
+    ax.set_xlabel('LLM Model')
+    ax.set_ylabel('Success Rate (%)')
+    ax.set_title(title)
+    ax.set_xticks(range(len(models)))
+    ax.set_xticklabels(models, rotation=45, ha='right')
+    ax.set_ylim(0, 100)
+    ax.grid(True, alpha=0.3)
+    
+    # Add value labels on bars
+    for bar, value in zip(bars, success_rates):
+        height = bar.get_height()
+        ax.text(bar.get_x() + bar.get_width()/2., height + 1,
+                f'{value:.1f}%', ha='center', va='bottom', fontsize=fontsize)
+
+
+def plot_llm_comparison(ax1, ax2, ax3, models, score_distributions, differential_distributions, success_rates):
+    """Create violin plots and bar plot for LLM comparison."""
+    # Plot 1: Score distribution per LLM
+    create_violin_plot(ax1, score_distributions, models, 'Score Distribution per LLM', 'Score', 'skyblue', 8)
+    
+    # Plot 2: Score differential distribution per LLM
+    create_violin_plot(ax2, differential_distributions, models, 'Score Differential per LLM\n(Child - Parent)', 'Score Differential', 'lightcoral', 8)
+    
+    # Plot 3: Success rate per LLM
+    create_success_rate_plot(ax3, models, success_rates, 'Success Rate per LLM', 8)
+
+
 def create_visualization(programs: list, experiment_label: str, output_path: str | None = None, 
-                        show_individual: bool = True, show_combined: bool = True):
+                        show_individual: bool = True, show_combined: bool = True, db_path: str = None, experiment_id: int = None, max_generations: int = None):
     """Create and save the visualization."""
     if not programs:
         print("No programs found for this experiment.")
         return
+    
+    # Filter by max generations if specified
+    if max_generations is not None:
+        original_count = len(programs)
+        programs = [p for p in programs if p['gen'] <= max_generations]
+        print(f"Filtered to generations 1-{max_generations}: {len(programs)} programs (from {original_count} total)")
     
     # Filter out failed programs (those with failure_type not None)
     successful_programs = [p for p in programs if p['failure_type'] is None]
@@ -288,7 +462,7 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     # 6. Distribution of Total Generation Times
     generation_times = [p['generation_time'] for p in programs if p['generation_time'] is not None]
     plot_generation_time_distribution(ax6, generation_times, 'Distribution of Total Generation Times')
-    
+
     # Add statistics text in dedicated space above plots
     # Calculate statistics using the data we already have
     total_tokens_list = [p['total_tokens'] for p in programs if p['total_tokens'] is not None]
@@ -319,9 +493,93 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     else:
         plt.show()
     
+    models, score_distributions, differential_distributions, success_rates = get_llm_stats(db_path, experiment_id, max_generations)
+    
+    # Create a new figure for LLM comparison
+    fig_llm, (ax_llm1, ax_llm2, ax_llm3) = plt.subplots(1, 3, figsize=(20, 6))
+    
+    # Plot LLM comparison
+    plot_llm_comparison(ax_llm1, ax_llm2, ax_llm3, models, score_distributions, differential_distributions, success_rates)
+    
+    # Add overall title
+    fig_llm.suptitle(f'LLM Performance Comparison - {experiment_label}', fontsize=16, y=0.98)
+    
+    plt.tight_layout()
+    
+    if output_path:
+        # Create LLM-specific output path
+        base_path = Path(output_path)
+        llm_output_path = base_path.parent / f"{base_path.stem}_llm_comparison{base_path.suffix}"
+        plt.savefig(llm_output_path, dpi=300, bbox_inches='tight')
+        print(f"LLM comparison plot saved to: {llm_output_path}")
+    else:
+        plt.show()
+    
+    plt.close(fig_llm)
+    
     # Create individual plots if requested
     if show_individual:
         create_individual_plots(programs, experiment_label, output_path)
+    
+    # Create individual LLM comparison plots if requested
+    if show_individual and db_path and experiment_id:
+        try:
+            create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, experiment_label, output_path)
+        except Exception as e:
+            print(f"Error creating individual LLM plots: {str(e)}")
+
+
+def create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, experiment_label: str, output_path: str | None = None):
+    """Create individual plots for LLM comparison metrics."""
+    if not models:
+        return
+    
+    # Create individual score distribution plot
+    if any(score_distributions):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        create_violin_plot(ax, score_distributions, models, f'Score Distribution per LLM - {experiment_label}', 'Score', 'skyblue', 10)
+        plt.tight_layout()
+        
+        if output_path:
+            base_path = Path(output_path)
+            individual_path = base_path.parent / f"{base_path.stem}_llm_score_distribution{base_path.suffix}"
+            plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+            print(f"Individual LLM score distribution plot saved to: {individual_path}")
+        else:
+            plt.show()
+        
+        plt.close()
+    
+    # Create individual score differential plot
+    if any(differential_distributions):
+        fig, ax = plt.subplots(figsize=(12, 6))
+        create_violin_plot(ax, differential_distributions, models, f'Score Differential per LLM (Child - Parent) - {experiment_label}', 'Score Differential', 'lightcoral', 10)
+        plt.tight_layout()
+        
+        if output_path:
+            base_path = Path(output_path)
+            individual_path = base_path.parent / f"{base_path.stem}_llm_score_differential{base_path.suffix}"
+            plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+            print(f"Individual LLM score differential plot saved to: {individual_path}")
+        else:
+            plt.show()
+        
+        plt.close()
+    
+    # Create individual success rate plot
+    fig, ax = plt.subplots(figsize=(12, 6))
+    create_success_rate_plot(ax, models, success_rates, f'Success Rate per LLM - {experiment_label}', 10)
+    plt.tight_layout()
+    
+    if output_path:
+        base_path = Path(output_path)
+        individual_path = base_path.parent / f"{base_path.stem}_llm_success_rate{base_path.suffix}"
+        plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+        print(f"Individual LLM success rate plot saved to: {individual_path}")
+    else:
+        plt.show()
+    
+    plt.close()
 
 
 def create_individual_plots(programs: list, experiment_label: str, output_path: str | None = None):
@@ -440,28 +698,26 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
 
 def main():
     parser = argparse.ArgumentParser(description='Visualize experiment results')
+    parser.add_argument('--db', type=str, default='alphaevolve.db', help='Database file path (default: alphaevolve.db)')
     parser.add_argument('--experiment', '-e', type=str, help='Experiment label to visualize')
     parser.add_argument('--list-experiments', '-l', action='store_true', help='List all available experiments')
     parser.add_argument('--output', '-o', type=str, help='Output file path for the plot (e.g., plot.png)')
-    parser.add_argument('--config', '-c', type=str, default='config.yml', help='Config file path')
+    parser.add_argument('--max-generations', '-m', type=int, help='Maximum generation to include in plots (e.g., 10 for generations 1-10)')
     parser.add_argument('--individual-only', action='store_true', help='Show only individual plots, not combined')
     parser.add_argument('--combined-only', action='store_true', help='Show only combined plot, not individual')
     
     args = parser.parse_args()
     
-    # Load config to get database path
-    try:
-        config = Config.load(args.config)
-        db_path = config.db_uri.replace("sqlite:///", "", 1)
-    except Exception as e:
-        print(f"Error loading config: {e}")
-        print("Please make sure you're in the correct directory with a config.yml file")
+    # Check if database file exists
+    if not os.path.exists(args.db):
+        print(f"Database file '{args.db}' not found.")
+        print("Please specify the correct database path with --db")
         return
     
     if args.list_experiments:
         print("Available experiments:")
         print("-" * 80)
-        experiments = get_experiments(db_path)
+        experiments = get_experiments(args.db)
         for exp in experiments:
             print(f"ID: {exp['id']}")
             print(f"Label: {exp['label']}")
@@ -476,7 +732,7 @@ def main():
         return
     
     # Find experiment by label
-    experiments = get_experiments(db_path)
+    experiments = get_experiments(args.db)
     experiment = None
     for exp in experiments:
         if exp['label'] == args.experiment:
@@ -491,7 +747,7 @@ def main():
         return
     
     # Get experiment data
-    programs = get_experiment_data(db_path, experiment['id'])
+    programs = get_experiment_data(args.db, experiment['id'])
     
     if not programs:
         print(f"No programs found for experiment '{args.experiment}'")
@@ -526,10 +782,10 @@ def main():
     show_combined = not args.individual_only
     
     # Create visualization
-    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined)
+    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined, args.db, experiment['id'], args.max_generations)
 
 
 # Example usage:
-# python scripts/visualize_experiment.py -e book-scanning --config examples/book_scanning/config.yml
+# python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning
 if __name__ == "__main__":
     main() 

@@ -3,8 +3,9 @@ import time
 import json
 import random
 import logging
+import math
 from typing import List, cast
-from openai import NOT_GIVEN, OpenAI
+from openai import OpenAI
 from openai.types.chat import ChatCompletionMessageParam
 
 from .config import LLMCfg, ModelCfg
@@ -77,19 +78,16 @@ class LLMEngine:
         self._total_llm_time = 0.0
         self._total_tokens = 0
 
-    def _generate_internal(self, prompt: str) -> str:
-        """Internal method that performs the actual LLM generation."""
-        # Select a new model for each generation (optional - could be per call)
-        self._select_model()
-        
-        # Add the user prompt to the conversation
-        self.add_message("user", prompt)
-        
+    def _generate_internal(self) -> str:
+        """Internal method that performs the actual LLM generation. DO NOT MAKE ANY STATE CHANGES HERE,
+        they will not persist since this function is called in a subprocess by the timeout decorator."""                
         # Make the API call
         response = self.client.chat.completions.create(
             model=self.selected_model.name,
             messages=self.messages,
-            temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN
+            temperature=self.selected_model.temperature,
+            reasoning_effort=self.selected_model.reasoning_effort,
+            timeout=self.llm_cfg.llm_timeout
         )
         
         content = response.choices[0].message.content
@@ -98,38 +96,65 @@ class LLMEngine:
         usage = response.usage
         total_tokens = usage.total_tokens if usage else 0
         
-        # Add the assistant's response to the conversation
-        if content:
-            self.add_message("assistant", content)
-        
         return content.strip() if content else "", total_tokens
 
-    def generate(self, prompt: str) -> str:
-        """Generate a response from the LLM with timeout handling."""
+    def generate(self, prompt: str, max_retries: int = 5, base_delay: float = 1.0, max_delay: float = 10.0) -> str:
+        """Generate a response from the LLM with timeout handling and retry logic with exponential backoff.
+        Args:
+            max_retries: Maximum number of retries
+            base_delay: Base delay in seconds between retries
+            max_delay: Maximum delay in seconds between retries
+        Returns:
+            The response from the LLM
+        Raises:
+            Exception: If all retries fail
+        """
         # Track response time
         start_time = time.time()
+        # Add the user prompt to the conversation
+        self.add_message("user", prompt)
         
-        try:
-            # Use the timeout decorator to wrap the generation
-            # (OpenAI's built-in timeout param does not work correctly)
-            timeout_func = timeout(
-                self.selected_model.llm_timeout, 
-                f"LLM generation timed out after {self.selected_model.llm_timeout} seconds"
-            )(self._generate_internal)
-            
-            content, total_tokens = timeout_func(prompt)
-            
-        except Exception as e:
-            self.logger.error(f"Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
-            raise e
-
-        response_time = time.time() - start_time
-        
-        # Update internal metrics
-        self._total_llm_time += response_time
-        self._total_tokens += total_tokens
-        
-        return content
+        last_exception = None
+        # Try up to max_retries times
+        for attempt in range(max_retries):
+            try:
+                # Use the timeout decorator to wrap the generation
+                # (OpenAI's built-in timeout param does not work correctly)
+                generate_with_timeout = timeout(
+                    self.llm_cfg.llm_timeout, 
+                    f"LLM generation timed out after {self.llm_cfg.llm_timeout} seconds"
+                )(self._generate_internal)
+                
+                content, total_tokens = generate_with_timeout()
+                
+                # Check if we got a valid response (not empty or None)
+                if not content or not content.strip():
+                    raise ValueError(f"Empty response from {self.selected_model.name}")
+                
+                # Add the assistant's response to the conversation
+                self.add_message("assistant", content)
+                
+                # Update internal metrics
+                response_time = time.time() - start_time
+                self._total_llm_time += response_time
+                self._total_tokens += total_tokens
+                
+                return content
+                        
+            except Exception as e:
+                last_exception = e
+                if attempt < max_retries - 1:
+                    # Calculate exponential backoff delay
+                    delay = min(base_delay * (2 ** (attempt + 1)) + random.uniform(0, 1), max_delay)
+                    
+                    self.logger.warning(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
+                    self.logger.info(f"Retrying in {delay:.2f} seconds...")
+                    
+                    # Wait before retrying
+                    time.sleep(delay)
+                else:
+                    self.logger.error(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
+                    raise last_exception
     
     def get_used_model(self) -> str:
         """Get the name of the currently selected model."""
@@ -151,6 +176,14 @@ def create_llm_client(llm_cfg: LLMCfg) -> OpenAI:
         return OpenAI(
             api_key=api_key, 
             base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
+        )
+    elif llm_cfg.provider.lower() == "openrouter":
+        api_key = os.getenv("OPENROUTER_API_KEY")
+        if not api_key:
+            raise RuntimeError("Set OPENROUTER_API_KEY in your environment.")
+        return OpenAI(
+            api_key=api_key,
+            base_url="https://openrouter.ai/api/v1"
         )
     else:
         raise ValueError(f"Unsupported LLM provider: {llm_cfg.provider}")

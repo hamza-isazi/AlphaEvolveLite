@@ -10,19 +10,17 @@ llm:
   # provider: openai
   # model: gpt-4o-mini          # or any model your key can access
   provider: gemini
+  llm_timeout: 90.0  # Global timeout for all LLM requests
   models:
     - name: gemini-2.5-flash-lite
       probability: 0.7
       temperature: 0.9
-      llm_timeout: 30.0
     - name: gemini-2.5-flash
       probability: 0.2
       temperature: 0.9
-      llm_timeout: 90.0
     - name: gemini-2.5-pro
       probability: 0.1
       temperature: 0.9
-      llm_timeout: 120.0
   system_prompt: |
     You are an optimisation expert specialising in logistics and scheduling problems, assisting with a digitisation project involving millions of books from libraries around the world.
 
