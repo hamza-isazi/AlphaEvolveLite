@@ -42,7 +42,7 @@ def create_program_generation_context(cfg: Config, logger: logging.Logger, clien
 
 def generate_initial_response(context: ProgramGenerationContext, parent_row: dict, inspiration_rows: List[dict], record: ProgramRecord, use_tabu_search: bool = False) -> Tuple[Optional[str], Optional[str]]:
     """Generate the initial response in the form of an explanation and a code diff section from parent and inspiration data."""
-    prompt = context.prompt_sampler.build(parent_row, inspiration_rows, use_tabu_search=use_tabu_search)
+    prompt = context.prompt_sampler.build_initial_prompt(parent_row, inspiration_rows, use_tabu_search=use_tabu_search)
     initial_response = context.llm_instance.generate(prompt)
     # Parse initial response to get explanation and code
     explanation, code_section = parse_code_response(initial_response)    
@@ -68,7 +68,10 @@ def generate_retry_response(context: ProgramGenerationContext, record: ProgramRe
     context.llm_instance.select_retry_model()
     
     retry_prompt = context.prompt_sampler.build_retry_prompt(
-        record.code, record.error_message, record.failure_type
+        messages=context.llm_instance.messages,
+        current_code=record.code,
+        error_message=record.error_message,
+        failure_type=record.failure_type
     )
     
     response = context.llm_instance.generate(retry_prompt)
@@ -137,10 +140,10 @@ def generate_program(
                 # Generate a retry response
                 code_response = generate_retry_response(context, record)
 
-            # Apply the patch to the code
-            record.code = context.patcher.apply_diff(record.code, code_response)
-            # Compile the new program to check for syntax errors
-            compile(record.code, "<candidate>", "exec")
+            # Apply the patch to the code only if it compiles (no syntax errors or bad imports)
+            new_code = context.patcher.apply_diff(record.code, code_response)
+            compile(new_code, "<candidate>", "exec")
+            record.code = new_code
             
             # Write to temp file for evaluation
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=True) as tmp:

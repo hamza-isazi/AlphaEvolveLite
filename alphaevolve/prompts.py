@@ -3,7 +3,7 @@ Prompt assembler that mimics AlphaEvolve's SEARCH/REPLACE style.
 """
 
 from __future__ import annotations
-from typing import Sequence, Dict
+from typing import Sequence, Dict, List
 from .patcher import _EVOLVE_RE
 
 TEMPLATE = """\
@@ -75,21 +75,24 @@ TEMPLATE = """\
         somewhere, you should also propose a change to add that variable.
 """
 
-RETRY_TEMPLATE = """\
-The previous attempt failed with the following error:
+RETRY_FAILED_CODE_CHANGE_TEMPLATE = """\
+Your code changes were not applied successfully due to the following error:
 
-{error_message}
+{failure_type}: {error_message}
 
-This indicates a {failure_type} issue that needs to be fixed.
+Please rewrite the code changes in the same SEARCH/REPLACE or Full File Replacement format."""
 
-Below is the current version of the code that needs to be corrected:
+RETRY_NEW_CODE_TEMPLATE = """\
+The new code you proposed:
 
 {current_code}
 
-Please generate a new response that fixes the issue. 
-The response should be relative to the current code shown above, and not to any earlier version.
+Failed with the following error:
 
-Please provide corrected code changes using SEARCH/REPLACE or Full File Replacement format:"""
+{failure_type}: {error_message}
+
+Please correct the issue with new code changes using SEARCH/REPLACE or Full File Replacement format.
+Your code changes will be applied to the new code shown above."""
 
 EVOLVE_INSTRUCTIONS = """\
     - Only change lines *between* the markers  
@@ -170,7 +173,17 @@ class PromptSampler:
         """Check if the code contains evolve blocks."""
         return bool(_EVOLVE_RE.search(code))
 
-    def build(self, parent_row: dict, inspiration_rows: Sequence[Dict], use_tabu_search: bool = False) -> str:
+    def _get_task_instructions(self, use_tabu_search: bool) -> tuple[str, str]:
+        """Get task instruction and approach instruction based on tabu search mode."""
+        if use_tabu_search:
+            task_instruction = "Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above using a FUNDAMENTALLY DIFFERENT APPROACH."
+            approach_instruction = "IMPORTANT: You must take a completely different approach from the prior programs. Consider them 'taboo' and avoid their strategies. Explore alternative algorithms, data structures, or problem-solving paradigms that the prior programs have not used. Think outside the box and try something radically different."
+        else:
+            task_instruction = "Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above."
+            approach_instruction = "Do not aim to match the performance of the best program - aim to exceed it. Look for opportunities to combine the best ideas from multiple prior programs while adding novel improvements. Consider edge cases, optimizations, and alternative approaches that the prior programs may have missed. Suggest improvements that will lead to significantly better performance than any existing program."
+        return task_instruction, approach_instruction
+
+    def build_initial_prompt(self, parent_row: dict, inspiration_rows: Sequence[Dict], use_tabu_search: bool = False) -> str:
         # Choose evolve instructions based on whether evolve blocks are present
         evolve_instructions = EVOLVE_INSTRUCTIONS if self._has_evolve_blocks(parent_row['code']) else FREE_INSTRUCTIONS
         
@@ -180,13 +193,8 @@ class PromptSampler:
             all_scores.extend(r['score'] for r in inspiration_rows)
         target_score = max(all_scores)
         
-        # Determine task instruction and approach based on tabu search mode
-        if use_tabu_search:
-            task_instruction = "Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above using a FUNDAMENTALLY DIFFERENT APPROACH."
-            approach_instruction = "IMPORTANT: You must take a completely different approach from the prior programs. Consider them 'taboo' and avoid their strategies. Explore alternative algorithms, data structures, or problem-solving paradigms that the prior programs have not used. Think outside the box and try something radically different."
-        else:
-            task_instruction = "Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above."
-            approach_instruction = "Do not aim to match the performance of the best program - aim to exceed it. Look for opportunities to combine the best ideas from multiple prior programs while adding novel improvements. Consider edge cases, optimizations, and alternative approaches that the prior programs may have missed. Suggest improvements that will lead to significantly better performance than any existing program."
+        # Get task instructions
+        task_instruction, approach_instruction = self._get_task_instructions(use_tabu_search)
         
         prompt = TEMPLATE.format(
             parent=self._format_rows([parent_row], include_feedback=self.enable_feedback),
@@ -198,13 +206,22 @@ class PromptSampler:
         )
         return prompt
 
-    def build_retry_prompt(self, current_code: str, error_message: str, failure_type: str) -> str:
-        """Build a unified retry prompt for both patch and evaluation failures."""        
-        return RETRY_TEMPLATE.format(
-            current_code=f"```\n{current_code}\n```",
-            error_message=error_message,
-            failure_type=failure_type
-        )
+    def build_retry_prompt(self, messages: List[Dict], current_code: str, error_message: str, failure_type: str) -> str:
+        """Build a unified retry prompt for both patch and evaluation failures."""
+        # If the current code is already in the conversation, this means the diff was not applied successfully,
+        # so we can refer to it directly. Otherwise, we need to explicitly include the new code that is failing.
+        code_unchanged = any(msg["role"] == "user" and current_code in msg["content"] for msg in messages)
+        if code_unchanged:
+            return RETRY_FAILED_CODE_CHANGE_TEMPLATE.format(
+                error_message=error_message,
+                failure_type=failure_type
+            )
+        else:
+            return RETRY_NEW_CODE_TEMPLATE.format(
+                current_code=current_code,
+                error_message=error_message,
+                failure_type=failure_type
+            )
     
     def build_feedback_prompt(self, code: str, score: float, logs: str, evaluation_script_path: str = None) -> str:
         """Build a feedback prompt for analyzing program performance."""
