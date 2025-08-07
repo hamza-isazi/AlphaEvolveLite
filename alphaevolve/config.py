@@ -43,7 +43,7 @@ class EvolCfg:
     inspiration_count: int
     max_retries: int = 3   # Number of retries for failed program generation
     eval_timeout: float = 60.0  # Timeout in seconds for evaluation runs
-    enable_feedback: bool = True  # Enable LLM-generated feedback for successful programs
+    enable_feedback: bool = False  # Enable LLM-generated feedback for successful programs
     recent_generations: int = 5  # Number of recent generations to consider for inspiration selection
     recent_percentile: float = 10.0  # Percentile threshold for recent generation selection (0-100)
     selection_method: str = "enhanced_inspiration"  # Method for inspiration selection: "boltzmann", "top_k_and_random", or "enhanced_inspiration"
