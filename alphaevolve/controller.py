@@ -142,7 +142,7 @@ class EvolutionController:
         with progress tracking and logging throughout the process.
         """
         # Initialize evolution parameters
-        max_concurrent = 8  # Number of concurrent program generations
+        max_workers = self.cfg.evolution.max_workers  # Number of concurrent program generations
         max_total = self.cfg.evolution.max_generations * self.cfg.evolution.population_size  # Total programs to generate
         completed = 0  # Counter for completed program generations
         
@@ -157,7 +157,7 @@ class EvolutionController:
         else:
             completed = 0  # Counter for completed program generations
             
-        self.logger.info("Starting continuous evolution with up to %d concurrent individuals", max_concurrent)
+        self.logger.info("Starting continuous evolution with up to %d concurrent individuals", max_workers)
         generation_program_records = []  # Store results for current generation
         task_id_counter = completed  # Unique identifier for each generation task
         gen_pbar = tqdm(total=self.cfg.evolution.population_size, desc=f"Generation {self.current_gen}") # Progress bar for current generation
@@ -205,13 +205,13 @@ class EvolutionController:
                 return None
 
         # Set up thread pool for concurrent program generation
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit initial batch of program generation tasks
             futures = {
                 executor.submit(generate_and_save_program, task_id_counter + i)
-                for i in range(max_concurrent)
+                for i in range(max_workers)
             }
-            task_id_counter += max_concurrent
+            task_id_counter += max_workers
 
             # Main evolution loop: generate programs continuously until max_total is reached
             while completed < max_total:

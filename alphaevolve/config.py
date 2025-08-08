@@ -48,6 +48,7 @@ class EvolCfg:
     recent_percentile: float = 10.0  # Percentile threshold for recent generation selection (0-100)
     selection_method: str = "enhanced_inspiration"  # Method for inspiration selection: "boltzmann", "top_k_and_random", or "enhanced_inspiration"
     tabu_search_probability: float = 0.5  # Probability of using tabu search (fundamentally new approach) vs improvement
+    max_workers: int = 8  # Number of workers for the controller threadpool
 
 
 @dataclass
