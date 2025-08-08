@@ -11,6 +11,10 @@ from openai.types.chat import ChatCompletionMessageParam
 from .config import LLMCfg, ModelCfg
 from .utils import timeout
 
+class LLMAPIError(Exception):
+    """Exception raised when the LLM API returns an error."""
+    pass
+
 class LLMEngine:
     """LLM engine with conversation management and internal metric tracking."""
     
@@ -113,7 +117,6 @@ class LLMEngine:
         # Add the user prompt to the conversation
         self.add_message("user", prompt)
         
-        last_exception = None
         # Try up to max_retries times
         for attempt in range(max_retries):
             try:
@@ -141,7 +144,6 @@ class LLMEngine:
                 return content
                         
             except Exception as e:
-                last_exception = e
                 if attempt < max_retries - 1:
                     # Calculate exponential backoff delay
                     delay = min(base_delay * (2 ** (attempt + 1)) + random.uniform(0, 1), max_delay)
@@ -153,7 +155,7 @@ class LLMEngine:
                     time.sleep(delay)
                 else:
                     self.logger.error(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
-                    raise last_exception
+                    raise LLMAPIError(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
     
     def get_used_model(self) -> str:
         """Get the name of the currently selected model."""

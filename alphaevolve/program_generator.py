@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from .patcher import PatchApplier, PatchError
 from .prompts import PromptSampler
 from .problem import Problem
-from .llm import LLMEngine
+from .llm import LLMEngine, LLMAPIError
 from openai import OpenAI
 from .config import Config
 from .response_parser import parse_code_response
@@ -107,6 +107,8 @@ def handle_program_generation_error(error: Exception) -> Tuple[str, str]:
         return f"Syntax error: {str(error)}", "syntax_error"
     elif isinstance(error, TimeoutError):
         return f"Timeout error: {str(error)}", "timeout"
+    elif isinstance(error, LLMAPIError):
+        return f"LLM API error: {str(error)}", "llm_api_error"
     else:
         return str(error), "runtime_error"
 
@@ -170,6 +172,8 @@ def generate_program(
         explanation, code_response = generate_initial_response(context, parent_row, inspiration_rows, record, use_tabu_search=use_tabu_search)
         record.conversation = context.llm_instance.get_conversation_json()
     except Exception as e:
+        # If we don't even get a valid initial response, we just return the record with the error message
+        # as there's no valid program to fix
         error_message, failure_type = handle_program_generation_error(e)
         record.error_message = error_message
         record.failure_type = failure_type
@@ -206,11 +210,13 @@ def generate_program(
             record.failure_type = None
             record.error_message = None
             break
-            
         except Exception as e:
             error_message, failure_type = handle_program_generation_error(e)
             record.error_message = error_message
             record.failure_type = failure_type
+            # We don't want to retry program generation for LLM API errors (after already retrying the API call with exponential backoff)
+            if failure_type == "llm_api_error":
+                break
     
     record.retry_count = retry_count
     record.conversation = context.llm_instance.get_conversation_json()
