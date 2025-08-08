@@ -6,6 +6,7 @@ Usage:
     python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label"
     python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --output plot.png
     python scripts/visualize_experiment.py --db alphaevolve.db --list-experiments
+    python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --first-generation 5 --last-generation 15
 """
 
 import argparse
@@ -21,6 +22,10 @@ from scipy import stats
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from alphaevolve.config import Config
+
+# Global variables for generation filtering
+FIRST_GEN = 0
+LAST_GEN = None
 
 
 def get_experiments(db_path: str) -> list:
@@ -47,39 +52,49 @@ def get_experiment_data(db_path: str, experiment_id: int) -> list:
     conn.row_factory = sqlite3.Row
     
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens
-        FROM programs
-        WHERE experiment_id = ?
-        ORDER BY gen, score DESC
-    """, (experiment_id,))
+    
+    # Filter by generation range
+    if LAST_GEN is None:
+        cursor.execute("""
+            SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens
+            FROM programs
+            WHERE experiment_id = ? AND gen >= ?
+            ORDER BY gen, score DESC
+        """, (experiment_id, FIRST_GEN))
+    else:
+        cursor.execute("""
+            SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens
+            FROM programs
+            WHERE experiment_id = ? AND gen >= ? AND gen <= ?
+            ORDER BY gen, score DESC
+        """, (experiment_id, FIRST_GEN, LAST_GEN))
     
     programs = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return programs
 
 
-def get_llm_stats(db_path: str, experiment_id: int, max_generations: int = None) -> tuple:
+def get_llm_stats(db_path: str, experiment_id: int) -> tuple:
     """Get score distributions per LLM and success rate per LLM for a specific experiment.
-    If max_generations is specified, only include programs up to that generation."""
+    If first_gen and last_gen are specified, only include programs in that generation range."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     
     cursor = conn.cursor()
     
     # Get all programs for the specific experiment with their used model and parent info
-    if max_generations is None:
+    if LAST_GEN is None:
         cursor.execute("""
             SELECT p.id, p.score, p.failure_type, p.used_model, p.parent_id, p.gen
             FROM programs p
-            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL
-        """, (experiment_id,))
+            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL AND p.gen >= ?
+        """, (experiment_id, FIRST_GEN))
     else:
         cursor.execute("""
             SELECT p.id, p.score, p.failure_type, p.used_model, p.parent_id, p.gen
             FROM programs p
-            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL AND p.gen <= ?
-        """, (experiment_id, max_generations))
+            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL AND p.gen >= ? AND p.gen <= ?
+        """, (experiment_id, FIRST_GEN, LAST_GEN))
     
     programs = [dict(row) for row in cursor.fetchall()]
     
@@ -144,7 +159,7 @@ def get_llm_stats(db_path: str, experiment_id: int, max_generations: int = None)
     return models, score_distributions, differential_distributions, success_rates
 
 
-def get_best_score_progression(db_path: str, experiment_id: int, max_generations: int = None) -> list:
+def get_best_score_progression(db_path: str, experiment_id: int) -> list:
     """Get the best score progression over time, showing which model produced each improvement."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
@@ -152,20 +167,20 @@ def get_best_score_progression(db_path: str, experiment_id: int, max_generations
     cursor = conn.cursor()
     
     # Get all programs ordered by id (chronological order) with valid scores
-    if max_generations is None:
+    if LAST_GEN is None:
         cursor.execute("""
             SELECT id, gen, used_model, score
             FROM programs
-            WHERE experiment_id = ? AND score IS NOT NULL
+            WHERE experiment_id = ? AND score IS NOT NULL AND gen >= ?
             ORDER BY id
-        """, (experiment_id,))
+        """, (experiment_id, FIRST_GEN))
     else:
         cursor.execute("""
             SELECT id, gen, used_model, score
             FROM programs
-            WHERE experiment_id = ? AND score IS NOT NULL AND gen <= ?
+            WHERE experiment_id = ? AND score IS NOT NULL AND gen >= ? AND gen <= ?
             ORDER BY id
-        """, (experiment_id, max_generations))
+        """, (experiment_id, FIRST_GEN, LAST_GEN))
     
     programs = [dict(row) for row in cursor.fetchall()]
     conn.close()
@@ -453,17 +468,11 @@ def plot_llm_comparison(ax1, ax2, ax3, ax4, models, score_distributions, differe
 
 
 def create_visualization(programs: list, experiment_label: str, output_path: str | None = None, 
-                        show_individual: bool = True, show_combined: bool = True, db_path: str = None, experiment_id: int = None, max_generations: int = None):
+                        show_individual: bool = True, show_combined: bool = True, db_path: str = None, experiment_id: int = None):
     """Create and save the visualization."""
     if not programs:
         print("No programs found for this experiment.")
         return
-    
-    # Filter by max generations if specified
-    if max_generations is not None:
-        original_count = len(programs)
-        programs = [p for p in programs if p['gen'] <= max_generations]
-        print(f"Filtered to generations 1-{max_generations}: {len(programs)} programs (from {original_count} total)")
     
     # Filter out failed programs (those with failure_type not None)
     successful_programs = [p for p in programs if p['failure_type'] is None]
@@ -570,10 +579,10 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     else:
         plt.show()
     
-    models, score_distributions, differential_distributions, success_rates = get_llm_stats(db_path, experiment_id, max_generations)
+    models, score_distributions, differential_distributions, success_rates = get_llm_stats(db_path, experiment_id)
     
     # Get best score progression data
-    best_score_progression = get_best_score_progression(db_path, experiment_id, max_generations)
+    best_score_progression = get_best_score_progression(db_path, experiment_id)
     
     # Create a new figure for LLM comparison (2x2 layout)
     fig_llm, ((ax_llm1, ax_llm2), (ax_llm3, ax_llm4)) = plt.subplots(2, 2, figsize=(16, 12))
@@ -603,10 +612,10 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     
     # Create individual LLM comparison plots if requested
     if show_individual:
-        create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, best_score_progression, experiment_label, output_path, db_path, experiment_id, max_generations)
+        create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, best_score_progression, experiment_label, output_path, db_path, experiment_id)
 
 
-def create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, best_score_progression, experiment_label: str, output_path: str | None = None, db_path: str = None, experiment_id: int = None, max_generations: int = None):
+def create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, best_score_progression, experiment_label: str, output_path: str | None = None, db_path: str = None, experiment_id: int = None):
     """Create individual plots for LLM comparison metrics."""
     if not models:
         return
@@ -789,16 +798,23 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
 
 
 def main():
+    global FIRST_GEN, LAST_GEN
+    
     parser = argparse.ArgumentParser(description='Visualize experiment results')
     parser.add_argument('--db', type=str, default='alphaevolve.db', help='Database file path (default: alphaevolve.db)')
     parser.add_argument('--experiment', '-e', type=str, help='Experiment label to visualize')
-    parser.add_argument('--list-experiments', '-l', action='store_true', help='List all available experiments')
+    parser.add_argument('--list-experiments', action='store_true', help='List all available experiments')
     parser.add_argument('--output', '-o', type=str, help='Output file path for the plot (e.g., plot.png)')
-    parser.add_argument('--max-generations', '-m', type=int, help='Maximum generation to include in plots (e.g., 10 for generations 1-10)')
+    parser.add_argument('--first-generation', '-f', type=int, default=0, help='First generation to include in plots (default: 0)')
+    parser.add_argument('--last-generation', '-l', type=int, help='Last generation to include in plots (e.g., 10 for generations 1-10)')
     parser.add_argument('--individual-only', action='store_true', help='Show only individual plots, not combined')
     parser.add_argument('--combined-only', action='store_true', help='Show only combined plot, not individual')
     
     args = parser.parse_args()
+    
+    # Set global variables
+    FIRST_GEN = args.first_generation
+    LAST_GEN = args.last_generation
     
     # Check if database file exists
     if not os.path.exists(args.db):
@@ -874,10 +890,11 @@ def main():
     show_combined = not args.individual_only
     
     # Create visualization
-    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined, args.db, experiment['id'], args.max_generations)
+    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined, args.db, experiment['id'])
 
 
 # Example usage:
 # python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning
+# python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning -f 5 -l 15
 if __name__ == "__main__":
     main() 
