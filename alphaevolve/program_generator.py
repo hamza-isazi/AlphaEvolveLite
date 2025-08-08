@@ -192,10 +192,9 @@ def generate_program(
                 # Generate a retry response
                 code_response = generate_retry_response(context, record)
 
-            # Apply the patch to the code only if it compiles (no syntax errors or bad imports)
-            new_code = context.patcher.apply_diff(record.code, code_response)
-            compile_with_context(new_code)
-            record.code = new_code
+            # Apply the patch and try to compile it to check for syntax errors
+            record.code = context.patcher.apply_diff(record.code, code_response)
+            compile_with_context(record.code)
             
             # Write to temp file for evaluation
             with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=True) as tmp:
