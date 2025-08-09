@@ -10,7 +10,7 @@ from .log import init_logger
 from .config import Config
 from .program_generator import generate_program
 from .db import EvolutionaryDatabase, ProgramRecord
-from .llm import LLMEngine, create_llm_client
+from .llm import LLMEngine
 from .problem import Problem
 from .prompts import PromptSampler
 from .patcher import PatchApplier
@@ -25,7 +25,6 @@ class ControllerContext:
         self.problem = Problem(self.cfg.problem_entry, self.cfg.problem_eval)
         self.prompt_sampler = PromptSampler(self.database, enable_feedback=self.cfg.evolution.enable_feedback)
         self.patcher = PatchApplier()
-        self.client = create_llm_client(self.cfg.llm)
 
 class EvolutionController:
     """
@@ -55,7 +54,7 @@ class EvolutionController:
             # Generate feedback for the seed program if enabled
             if cfg.evolution.enable_feedback:
                 feedback_prompt = self.context.prompt_sampler.build_feedback_prompt(seed_record.code, seed_record.score, seed_record.evaluation_logs, cfg.problem_eval)
-                llm_instance = LLMEngine(cfg.llm, self.context.client, self.logger)
+                llm_instance = LLMEngine(cfg.llm, self.logger)
                 seed_record.used_model = llm_instance.get_used_model()
                 seed_record.feedback = llm_instance.generate(feedback_prompt)
                 seed_record.total_llm_time, seed_record.total_tokens = llm_instance.get_metrics()
@@ -182,8 +181,7 @@ class EvolutionController:
                     task_id,
                     (parent_row, inspiration_rows),
                     self.cfg,
-                    self.logger,
-                    self.context.client
+                    self.logger
                 )
                 
                 # Set the generation number for the result here because we might have moved on to the next generation

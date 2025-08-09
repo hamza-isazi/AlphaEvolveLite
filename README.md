@@ -6,7 +6,7 @@ An open source simplified implementation of the AlphaEvolve evolutionary coding 
 - **Evolutionary Program Generation**: Uses LLM-based mutation and selection to improve code
 - **Tabu Search Integration**: Combines improvement and fundamentally different approaches to escape local optima
 - **Full Conversation Storage**: Stores complete LLM conversation history for each generated program
-- **Multiple LLM Providers**: Support for OpenAI and Google Gemini APIs
+- **Multiple LLM Providers**: Support for OpenAI, Google Gemini, and OpenRouter APIs with per-model provider configuration
 - **Flexible Evaluation**: Custom evaluation functions for any programming problem
 - **Progress Tracking**: Detailed logging and visualization of evolution progress
 - **Experiment Visualization**: Tools to analyze and visualize evolution results
@@ -21,7 +21,11 @@ AlphaEvolveLite/
 │   ├── program_generator.py # Program generation pipeline (process-safe)
 │   ├── db.py             # EvolutionaryDatabase: store candidates & evals
 │   ├── prompts.py        # PromptSampler: builds LLM prompts from archive + user seed
-│   ├── llm.py            # LLMEngine: wrapper for OpenAI/Gemini etc.
+│   ├── llm/              # LLM package with provider management
+│   │   ├── __init__.py   # Package exports
+│   │   ├── config.py     # LLM configuration dataclasses (ModelCfg, LLMCfg)
+│   │   ├── clients.py    # ClientPool and provider routing
+│   │   └── engine.py     # LLMEngine: conversation management and generation
 │   ├── patcher.py        # PatchApplier: applies diff blocks, syntax checks
 │   ├── problem.py        # ProblemAPI: user-supplied evaluate() + block markers
 │   ├── response_parser.py # ResponseParser: extracts code blocks from LLM responses
@@ -137,6 +141,8 @@ The system provides two logging modes:
 | `db.EvolutionaryDatabase`        | CRUD for programs, metrics, and prompt cache. Schema: `programs(id, code, score, gen, parent_id, conversation)`   |
 | `prompts.PromptSampler`          | Pull top-k & random elites, build prompt with block context, return to `LLMEngine`.                               |
 | `llm.LLMEngine`                  | Single `generate(prompt) → diff` using chosen provider. Maintains conversation history.                           |
+| `llm.ClientPool`                 | Thread-safe client pool for managing multiple LLM provider connections.                                           |
+| `llm.ModelCfg` & `llm.LLMCfg`    | Configuration dataclasses with automatic validation and provider defaulting.                                      |
 | `patcher.PatchApplier`           | Apply diff, run syntax lint; returns valid code or `None`.                                                        |
 | `response_parser.ResponseParser` | Extract code blocks and patches from LLM responses.                                                               |
 | `problem.ProblemAPI`             | User implements `evaluate(path) → float` and tags evolvable regions with `# EVOLVE-START/END`.                    |
@@ -146,31 +152,44 @@ The system provides two logging modes:
 
 ## LLM Providers
 
-AlphaEvolveLite supports multiple LLM providers and models through the `provider` field in the configuration. You can configure multiple models with selection probabilities for each generation.
+AlphaEvolveLite supports multiple LLM providers with flexible per-model provider configuration. The system uses a thread-safe client pool to efficiently manage connections to different providers, and automatically handles provider defaulting for models that don't specify one.
 
 ### Supported Providers
 
 #### OpenAI
 **Environment Variable**: `OPENAI_API_KEY`
-- `gpt-4o-mini`
-- `gpt-4o`
-- `gpt-4`
-- `gpt-3.5-turbo`
 
 #### Google Gemini
 **Environment Variable**: `GOOGLE_API_KEY`
-- `gemini-2.5-flash`
-- `gemini-2.5-pro`
-- `gemini-1.5-flash`
-- `gemini-1.5-pro`
 
-The Gemini integration uses the OpenAI-compatible API format provided by Google, making it seamless to switch between providers.
+#### OpenRouter
+**Environment Variable**: `OPENROUTER_API_KEY`
+
+### Per-Model Provider Configuration
+
+Each model can specify its own provider, allowing you to mix and match models from different providers in a single experiment:
+
+```yaml
+llm:
+  provider: openai  # Global default provider
+  models:
+    - name: gpt-4o-mini
+      probability: 0.4
+      # No provider specified - uses global default (openai)
+    - name: openai/gpt-4o-mini
+      probability: 0.3
+      provider: openrouter  # Uses OpenRouter for this model
+    - name: gemini-2.5-flash
+      probability: 0.3
+      provider: gemini  # Uses Google Gemini directly
+```
 
 ### Model Selection
 For each generation, the system randomly selects a model based on the configured probabilities. This allows you to:
 - Use faster, cheaper models for most generations
 - Occasionally use more powerful models for complex problems
 - Balance cost and performance based on your needs
+- Mix models from different providers in a single experiment
 
 ### Retry Model Configuration
 You can specify a dedicated model for retries and feedback **per model** using the `retry_model` parameter:
@@ -199,6 +218,14 @@ This feature is particularly useful for:
 - Escaping local optima when evolution gets stuck
 - Exploring diverse solution approaches
 - Balancing between incremental improvements and radical innovations
+
+### Configuration Validation
+
+The system automatically validates LLM configurations during startup:
+- **Probability Validation**: Model probabilities must sum to exactly 1.0
+- **Provider Defaulting**: Models without explicit providers automatically use the global provider
+- **Model Name Uniqueness**: All model names must be unique within the configuration
+- **Retry Model References**: All `retry_model` references must point to existing models in the configuration
 
 ## Examples
 
@@ -231,16 +258,22 @@ experiment:
   save_top_k: 5
 
 llm:
-  provider: openai
+  provider: openai  # Global default provider
   llm_timeout: 120.0  # Global timeout for all LLM requests
   models:
     - name: gpt-4o-mini
-      probability: 0.7
+      probability: 0.4
       temperature: 0.9
+      # No provider specified - uses global default (openai)
       retry_model: gpt-4o  # Use more capable model for retries and feedback
-    - name: gpt-4o
+    - name: gpt-4o-mini
       probability: 0.3
       temperature: 0.8
+      provider: openrouter  # Use OpenRouter for this model
+    - name: gemini-2.5-flash
+      probability: 0.3
+      temperature: 0.7
+      provider: google  # Use Google Gemini directly
       # No retry_model specified - will use same model for retries and feedback
   system_prompt: |
     You are an expert software engineer solving the following challenge:

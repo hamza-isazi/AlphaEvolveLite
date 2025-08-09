@@ -1,27 +1,27 @@
-import os
 import time
 import json
 import random
 import logging
-import math
 from typing import List, cast
-from openai import OpenAI, NOT_GIVEN
+from openai import NOT_GIVEN
 from openai.types.chat import ChatCompletionMessageParam
 
 from .config import LLMCfg, ModelCfg
-from .utils import timeout
+from .clients import global_client_pool
+from ..utils import timeout
+
 
 class LLMAPIError(Exception):
     """Exception raised when the LLM API returns an error."""
     pass
 
+
 class LLMEngine:
     """LLM engine with conversation management and internal metric tracking."""
     
-    def __init__(self, llm_cfg: LLMCfg, client: OpenAI, logger: logging.Logger) -> None:
+    def __init__(self, llm_cfg: LLMCfg, logger: logging.Logger) -> None:
         self.llm_cfg = llm_cfg
         self.system_prompt = llm_cfg.system_prompt
-        self.client = client
         self.selected_model: ModelCfg = None
         self.logger = logger
         # Internal metric tracking
@@ -30,6 +30,9 @@ class LLMEngine:
         
         # Select initial model
         self._select_model()
+
+        # Init the client pool
+        self._client_pool = global_client_pool()
         
         # Initialize conversation with system prompt
         self.messages: List[ChatCompletionMessageParam] = [
@@ -84,8 +87,11 @@ class LLMEngine:
     def _generate_internal(self) -> str:
         """Internal method that performs the actual LLM generation. DO NOT MAKE ANY STATE CHANGES HERE,
         they will not persist since this function is called in a subprocess by the timeout decorator."""                
+        # Get the appropriate client for the selected model
+        client = self._client_pool.get(self.selected_model.provider)
+        
         # Make the API call
-        response = self.client.chat.completions.create(
+        response = client.chat.completions.create(
             model=self.selected_model.name,
             messages=self.messages,
             temperature=self.selected_model.temperature,
@@ -148,42 +154,15 @@ class LLMEngine:
                     # Calculate exponential backoff delay
                     delay = min(base_delay * (2 ** (attempt + 1)) + random.uniform(0, 1), max_delay)
                     
-                    self.logger.info(f"LLM Generation Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
+                    self.logger.info(f"LLM Generation Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.selected_model.provider} and model {self.selected_model.name}: {e.__class__.__name__}: {e}")
                     self.logger.info(f"Retrying in {delay:.2f} seconds...")
                     
                     # Wait before retrying
                     time.sleep(delay)
                 else:
-                    self.logger.error(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
-                    raise LLMAPIError(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.llm_cfg.provider} and model {self.selected_model.name}: {str(e)}")
+                    self.logger.error(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.selected_model.provider} and model {self.selected_model.name}: {e.__class__.__name__}: {e}")
+                    raise LLMAPIError(f"Attempt {attempt + 1}/{max_retries}: Error getting response from provider {self.selected_model.provider} and model {self.selected_model.name}: {e.__class__.__name__}: {e}")
     
     def get_used_model(self) -> str:
         """Get the name of the currently selected model."""
         return self.selected_model.name
-
-
-def create_llm_client(llm_cfg: LLMCfg) -> OpenAI:
-    """Create the appropriate OpenAI client based on provider."""
-    if llm_cfg.provider.lower() == "openai":
-        api_key = os.getenv("OPENAI_API_KEY")
-        if not api_key:
-            raise RuntimeError("Set OPENAI_API_KEY in your environment.")
-        return OpenAI(api_key=api_key)
-    elif llm_cfg.provider.lower() == "gemini":
-        api_key = os.getenv("GOOGLE_API_KEY")
-        if not api_key:
-            raise RuntimeError("Set GOOGLE_API_KEY in your environment.")
-        return OpenAI(
-            api_key=api_key, 
-            base_url="https://generativelanguage.googleapis.com/v1beta/openai/"
-        )
-    elif llm_cfg.provider.lower() == "openrouter":
-        api_key = os.getenv("OPENROUTER_API_KEY")
-        if not api_key:
-            raise RuntimeError("Set OPENROUTER_API_KEY in your environment.")
-        return OpenAI(
-            api_key=api_key,
-            base_url="https://openrouter.ai/api/v1"
-        )
-    else:
-        raise ValueError(f"Unsupported LLM provider: {llm_cfg.provider}")

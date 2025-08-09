@@ -10,36 +10,43 @@ llm:
   llm_timeout: 300.0  # Global timeout for all LLM requests
   models:
     # OpenAI models - high performance, reliable
-    # - name: openai/gpt-4.1
-    #   probability: 0.05
-    #   temperature: 0.7
-    # - name: openai/o4-mini-high
-    #   probability: 0.05
-    #   retry_model: google/gemini-2.5-flash
-    - name: openai/gpt-4.1-mini
+    - name: gpt-5-2025-08-07
+      provider: openai
+      probability: 0.15
+      retry_model: gemini-2.5-flash
+    - name: gpt-5-mini-2025-08-07
+      provider: openai
+      probability: 0.05
+    - name: gpt-oss-120b
+      provider: openai
       probability: 0.05
       temperature: 0.7
-    # GPT-4o-mini is replaced by GPT-OSS-120B
-    # - name: openai/gpt-4o-mini
+    # - name: o4-mini-high
+    #   provider: openai
+    #   probability: 0.05
+    #   retry_model: gemini-2.5-flash
+    # # GPT-4o-mini is replaced by GPT-OSS-120B
+    # - name: gpt-4o-mini
+    #   provider: openai
     #   probability: 0.1
     #   temperature: 0.7
-    - name: openai/gpt-oss-120b
-      probability: 0.1
-      temperature: 0.7
     
     # Google Gemini models - strong reasoning capabilities, decent cost
-    - name: google/gemini-2.5-pro
-      probability: 0.25
+    - name: gemini-2.5-pro
+      provider: google
+      probability: 0.15
       temperature: 0.7
-      retry_model: google/gemini-2.5-flash
-    - name: google/gemini-2.5-flash
-      probability: 0.1
-      temperature: 0.7
-      reasoning_effort: medium
-    - name: google/gemini-2.5-flash-lite
+      retry_model: gemini-2.5-flash
+    - name: gemini-2.5-flash
+      provider: google
       probability: 0.05
       temperature: 0.7
       reasoning_effort: medium
+    # - name: gemini-2.5-flash-lite
+    #   provider: google
+    #   probability: 0.05
+    #   temperature: 0.7
+    #   reasoning_effort: medium
     
     # Anthropic Claude models - excellent for complex reasoning, high cost
     # Opus is a bit too expensive and not very accurate for this experiment, replaced by Grok4
@@ -50,17 +57,18 @@ llm:
     - name: anthropic/claude-sonnet-4
       probability: 0.05
       temperature: 0.7
-      retry_model: google/gemini-2.5-flash
+      retry_model: gemini-2.5-flash
 
     # - name: anthropic/claude-3.5-haiku
     #   probability: 0.05
     #   temperature: 0.7
-    #   retry_model: google/gemini-2.5-flash
+    #   retry_model: gemini-2.5-flash
 
     # DeepSeek models - strong reasoning capabilities, free, and should be quite diverse
     - name: deepseek/deepseek-chat-v3-0324:free
       probability: 0.05
       temperature: 0.7
+      retry_model: gemini-2.5-flash
 
     # - name: deepseek/deepseek-r1:free
     #   probability: 0.05
@@ -75,37 +83,37 @@ llm:
     - name: mistralai/codestral-2508
       probability: 0.05
       temperature: 0.7
-      retry_model: google/gemini-2.5-flash
+      retry_model: gemini-2.5-flash
 
     # Maverick is high capacity and quite cheap because of MoE
     - name: meta-llama/llama-4-maverick
       probability: 0.05
       temperature: 0.7
-      retry_model: google/gemini-2.5-flash
+      retry_model: gemini-2.5-flash
 
     # # Horizon, is great for code generation, but unavailable atm
     # - name: openrouter/horizon-beta
     #   probability: 0.1
     #   temperature: 0.7
-    #   retry_model: google/gemini-2.5-flash
+    #   retry_model: gemini-2.5-flash
 
     # Grok4 is supposed to be one of the most powerful models out there, but quite expensive
     - name: x-ai/grok-4
-      probability: 0.05
+      probability: 0.15
       temperature: 0.7
-      retry_model: google/gemini-2.5-flash
+      retry_model: gemini-2.5-flash
 
-    # Kimi-K2 is a good model for code generation and free
-    - name: moonshotai/kimi-k2:free
-      probability: 0.05
-      temperature: 0.7
-      retry_model: google/gemini-2.5-flash
+    # # Kimi-K2 is a good model for code generation and free
+    # - name: moonshotai/kimi-k2:free
+    #   probability: 0.05
+    #   temperature: 0.7
+    #   retry_model: gemini-2.5-flash
 
     # GLM-4.5 is a large model and quite cheap
     - name: z-ai/glm-4.5
-      probability: 0.05
+      probability: 0.1
       temperature: 0.7
-      retry_model: google/gemini-2.5-flash
+      retry_model: gemini-2.5-flash
     
   system_prompt: |
     You are tasked with implementing a Python text compression algorithm.
@@ -135,7 +143,7 @@ evolution:
   enable_feedback: false      # Enable LLM-generated feedback for successful programs
   selection_method: enhanced_inspiration  # Method: "boltzmann", "top_k_and_random", or "enhanced_inspiration"
   recent_generations: 5       # Number of recent generations to consider for inspiration selection
-  recent_percentile: 10.0     # Percentile threshold for recent generation selection (0-100)
+  recent_percentile: 5.0     # Percentile threshold for recent generation selection (0-100)
   tabu_search_probability: 0.1  # Probability of using tabu search (fundamentally new approach) vs improvement
 
 

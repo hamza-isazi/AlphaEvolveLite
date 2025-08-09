@@ -10,7 +10,6 @@ from .patcher import PatchApplier, PatchError
 from .prompts import PromptSampler
 from .problem import Problem
 from .llm import LLMEngine, LLMAPIError
-from openai import OpenAI
 from .config import Config
 from .response_parser import parse_code_response
 from .db import ProgramRecord
@@ -77,10 +76,10 @@ class ProgramGenerationContext:
     logger: logging.Logger
 
 
-def create_program_generation_context(cfg: Config, logger: logging.Logger, client: OpenAI) -> ProgramGenerationContext:
+def create_program_generation_context(cfg: Config, logger: logging.Logger) -> ProgramGenerationContext:
     """Create a program generation context with all necessary dependencies."""    
     return ProgramGenerationContext(
-        llm_instance=LLMEngine(cfg.llm, client, logger),
+        llm_instance=LLMEngine(cfg.llm, logger),
         patcher=PatchApplier(),
         problem=Problem(cfg.problem_entry, cfg.problem_eval),
         prompt_sampler=PromptSampler(None, enable_feedback=cfg.evolution.enable_feedback),  # No database needed for prompt building
@@ -137,8 +136,7 @@ def generate_program(
     individual_id: int, 
     parent_data: Tuple[dict, List[dict]], 
     cfg: Config,
-    logger: logging.Logger,
-    client: OpenAI
+    logger: logging.Logger
 ) -> ProgramRecord:
     """
     Generate a single program for the population using pre-sampled data.
@@ -150,8 +148,8 @@ def generate_program(
     Returns:
         ProgramRecord object containing all generation results
     """
-    # Create program generation context for this individual with the shared client
-    context = create_program_generation_context(cfg, logger, client)
+    # Create program generation context for this individual
+    context = create_program_generation_context(cfg, logger)
     
     parent_row, inspiration_rows = parent_data
     
