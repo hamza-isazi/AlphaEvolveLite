@@ -7,6 +7,8 @@ Usage:
     python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --output plot.png
     python scripts/visualize_experiment.py --db alphaevolve.db --list-experiments
     python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --first-generation 5 --last-generation 15
+    python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --benchmark-scores '{"baseline": 0.5, "target": 0.8}'
+    python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --benchmark-scores benchmarks.json
 """
 
 import argparse
@@ -16,6 +18,7 @@ import numpy as np
 from pathlib import Path
 import sys
 import os
+import json
 from scipy import stats
 
 # Add the parent directory to the path so we can import alphaevolve
@@ -271,7 +274,7 @@ def setup_plot_common(ax, xlabel, ylabel, title, show_grid=True):
 
 
 def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blue', 
-                         show_best=False, best_values=None, scale_factor=1.0):
+                         show_best=False, best_values=None, scale_factor=1.0, benchmark_scores=None):
     """Helper function to create a plot with percentile shading and summary lines."""
     # Apply scale factor if needed
     means = [m * scale_factor for m in means]
@@ -292,6 +295,17 @@ def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blu
     if show_best and best_values:
         best_values = [b * scale_factor for b in best_values]
         ax.plot(gens, best_values, '-', linewidth=2, color='orange', label='Best')
+    
+    # Plot benchmark scores as horizontal dashed lines if provided
+    if benchmark_scores and isinstance(benchmark_scores, dict):
+        colors = ['green', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan', 'magenta']
+        for i, (benchmark_name, benchmark_score) in enumerate(benchmark_scores.items()):
+            if isinstance(benchmark_score, (int, float)):
+                # Apply scale factor to benchmark score
+                scaled_score = benchmark_score * scale_factor
+                color = colors[i % len(colors)]
+                ax.axhline(y=scaled_score, color=color, linestyle='--', linewidth=2, 
+                          alpha=0.8, label=f'Benchmark: {benchmark_name}')
     
     setup_plot_common(ax, 'Generation', ylabel, title)
     ax.legend()
@@ -468,7 +482,8 @@ def plot_llm_comparison(ax1, ax2, ax3, ax4, models, score_distributions, differe
 
 
 def create_visualization(programs: list, experiment_label: str, output_path: str | None = None, 
-                        show_individual: bool = True, show_combined: bool = True, db_path: str = None, experiment_id: int = None):
+                        show_individual: bool = True, show_combined: bool = True, db_path: str = None, experiment_id: int = None,
+                        benchmark_scores: dict = None):
     """Create and save the visualization."""
     if not programs:
         print("No programs found for this experiment.")
@@ -513,7 +528,7 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
         best_scores = [max(gen_to_scores[gen]) for gen in score_gens]
         plot_with_percentiles(ax1, score_gens, score_means, score_p10s, score_p90s, 
                             'Score Evolution with Percentiles', 'Score', 
-                            show_best=True, best_values=best_scores)
+                            show_best=True, best_values=best_scores, benchmark_scores=benchmark_scores)
     
     # 2. Success and Failure Rates per Generation
     plot_success_failure_rates(ax2, programs, failure_types)
@@ -608,7 +623,7 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     
     # Create individual plots if requested
     if show_individual:
-        create_individual_plots(programs, experiment_label, output_path)
+        create_individual_plots(programs, experiment_label, output_path, benchmark_scores)
     
     # Create individual LLM comparison plots if requested
     if show_individual:
@@ -683,7 +698,7 @@ def create_individual_llm_plots(models, score_distributions, differential_distri
     plt.close()
 
 
-def create_individual_plots(programs: list, experiment_label: str, output_path: str | None = None):
+def create_individual_plots(programs: list, experiment_label: str, output_path: str | None = None, benchmark_scores: dict = None):
     """Create individual plots for each metric."""
     if not programs:
         return
@@ -715,19 +730,19 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
     # Create individual plots for all metrics
     plots_data = [
         (score_gens, score_means, score_p10s, score_p90s, 'Score Evolution', 'Score', True, 
-         [max(gen_to_scores[gen]) for gen in score_gens] if score_gens else None, 1.0, 'score_evolution'),
-        (retry_gens, retry_means, retry_p10s, retry_p90s, 'Retry Count', 'Retry Count', False, None, 1.0, 'retry_count'),
-        (token_gens, token_means, token_p10s, token_p90s, 'Total Tokens', 'Total Tokens (thousands)', False, None, 1/1000, 'total_tokens'),
+         [max(gen_to_scores[gen]) for gen in score_gens] if score_gens else None, 1.0, 'score_evolution', benchmark_scores),
+        (retry_gens, retry_means, retry_p10s, retry_p90s, 'Retry Count', 'Retry Count', False, None, 1.0, 'retry_count', None),
+        (token_gens, token_means, token_p10s, token_p90s, 'Total Tokens', 'Total Tokens (thousands)', False, None, 1/1000, 'total_tokens', None),
     ]
     
     # Create individual plots for percentile-based metrics
-    for i, (gens, means, p10s, p90s, title, ylabel, show_best, best_values, scale_factor, plot_id) in enumerate(plots_data):
+    for i, (gens, means, p10s, p90s, title, ylabel, show_best, best_values, scale_factor, plot_id, benchmark_scores_for_plot) in enumerate(plots_data):
         if not gens:
             continue
             
         fig, ax = plt.subplots(figsize=(10, 6))
         plot_with_percentiles(ax, gens, means, p10s, p90s, f"{title} - {experiment_label}", ylabel, 
-                            show_best=show_best, best_values=best_values, scale_factor=scale_factor)
+                            show_best=show_best, best_values=best_values, scale_factor=scale_factor, benchmark_scores=benchmark_scores_for_plot)
         
         plt.tight_layout()
         
@@ -809,6 +824,7 @@ def main():
     parser.add_argument('--last-generation', '-l', type=int, help='Last generation to include in plots (e.g., 10 for generations 1-10)')
     parser.add_argument('--individual-only', action='store_true', help='Show only individual plots, not combined')
     parser.add_argument('--combined-only', action='store_true', help='Show only combined plot, not individual')
+    parser.add_argument('--benchmark-scores', type=str, help='JSON string of benchmark scores as {"name": score, ...} or path to JSON file')
     
     args = parser.parse_args()
     
@@ -885,16 +901,39 @@ def main():
         for failure_type, count in sorted(failure_counts.items()):
             print(f"  - {failure_type}: {count}")
     
+    # Parse benchmark scores if provided
+    benchmark_scores = None
+    if args.benchmark_scores:
+        try:
+            # Check if it's a file path
+            if os.path.exists(args.benchmark_scores):
+                with open(args.benchmark_scores, 'r') as f:
+                    benchmark_scores = json.load(f)
+            else:
+                # Try to parse as JSON string
+                benchmark_scores = json.loads(args.benchmark_scores)
+            
+            if not isinstance(benchmark_scores, dict):
+                print("Error: Benchmark scores must be a dictionary")
+                return
+                
+            print(f"Loaded benchmark scores: {benchmark_scores}")
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"Error parsing benchmark scores: {e}")
+            print("Please provide a valid JSON string or file path")
+            return
+    
     # Determine what to show
     show_individual = not args.combined_only
     show_combined = not args.individual_only
     
     # Create visualization
-    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined, args.db, experiment['id'])
+    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined, args.db, experiment['id'], benchmark_scores)
 
 
 # Example usage:
 # python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning
 # python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning -f 5 -l 15
+# python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning --benchmark-scores '{"baseline": 0.5, "target": 0.8}'
 if __name__ == "__main__":
     main() 
