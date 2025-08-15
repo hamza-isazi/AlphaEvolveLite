@@ -1,0 +1,2 @@
+# Ignore Jinja2 direct use warnings in prompt generation code
+alphaevolve/prompts/

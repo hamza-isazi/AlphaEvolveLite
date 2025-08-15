@@ -1,0 +1,108 @@
+Act as an expert software developer. Your task is to iteratively improve the provided codebase.
+
+# Prior programs
+
+{% if inspirations %}
+The following programs represent the current best performers on this task:
+
+{% for inspiration in inspirations %}
+**Score: {{ "%.3f"|format(inspiration.score) }}**
+{% if inspiration.explanation %}
+Explanation: {{ inspiration.explanation }}
+{% endif %}
+```
+{{ inspiration.code }}
+```
+{% if enable_feedback and inspiration.feedback %}
+
+Feedback:
+{{ inspiration.feedback }}
+{% endif %}
+
+{% endfor %}
+{% else %}
+No prior programs yet.
+{% endif %}
+
+# Current program
+
+Here is the current program we are trying to improve (you will
+need to propose a modification to it below):
+
+**Score: {{ "%.3f"|format(parent.score) }}**
+{% if parent.explanation %}
+    Explanation: {{ parent.explanation }}
+{% endif %}
+```
+{{ parent.code }}
+```
+{% if enable_feedback and parent.feedback %}
+
+Feedback:
+{{ parent.feedback }}
+{% endif %}
+
+# Task
+{% if use_tabu_search %}
+Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above using a FUNDAMENTALLY DIFFERENT APPROACH.
+
+IMPORTANT: You must take a completely different approach from the prior programs. Consider them 'taboo' and avoid their strategies. Explore alternative algorithms, data structures, or problem-solving paradigms that the prior programs have not used. Think outside the box and try something radically different.
+{% else %}
+Your goal is to create a program that OUTPERFORMS the current program and all prior programs shown above.
+
+Do not aim to match the performance of the best program - aim to exceed it. Look for opportunities to combine the best ideas from multiple prior programs while adding novel improvements. Consider edge cases, optimizations, and alternative approaches that the prior programs may have missed. Suggest improvements that will lead to significantly better performance than any existing program.
+{% endif %}
+
+**TARGET TO BEAT: Score {{ "%.3f"|format(target_score) }}**
+
+# Response Format
+Your response MUST follow this exact structure:
+
+### Explanation
+Briefly describe what you changed, why it helps, and how it will outperform the prior programs. Keep it under 3 sentences. 
+Focus on the specific improvements that will achieve better performance than any of the inspiration programs.
+Do not restate or refer to the current program. Avoid implementation details already visible in the code diff.
+
+### Code
+[Provide your code changes using one of the following formats]
+*Do not explain changes inside the code section.*
+
+## Option 1: Major Structural Changes (Full File Replacement)
+If the changes require major structural modifications, output a complete file wrapped in a Markdown code block:
+```[language]
+[Complete file content here]
+```
+
+## Option 2: Targeted Improvements (SEARCH/REPLACE format)
+If making targeted improvements, output code changes using the SEARCH/REPLACE format:
+```
+<<<<<<< SEARCH
+# original lines
+=======
+# replacement lines
+>>>>>>> REPLACE
+
+<<<<<<< SEARCH
+# other set of original lines
+=======
+# other set of replacement lines
+>>>>>>> REPLACE
+```
+
+**IMPORTANT: If you need to change more than 50 contiguous lines or you aren't certain the SEARCH text will match exactly, ignore the SEARCH/REPLACE option and output the *entire new solution.py wrapped in one fenced code-block (Option 1). Do not include any diff markers in that case.**
+
+If using the SEARCH/REPLACE format, please follow these rules:
+### SEARCH/REPLACE block rules
+{% if has_evolve_blocks %}
+- Only change lines *between* the markers  
+`# EVOLVE-BLOCK-START` and `# EVOLVE-BLOCK-END`.  
+- Never alter code outside an EVOLVE block; any such hunk is rejected.
+{% else %}
+- You can modify any part of the code as needed.
+{% endif %}
+- You can suggest multiple changes, they will be applied in order.
+- Emit *each* independent modification as its own complete SEARCH/REPLACE block, each change must start with `<<<<<<< SEARCH` and end with `>>>>>>> REPLACE`.
+- Each SEARCH section must match the code EXACTLY, including all whitespace, indentation, and newlines.
+- SEARCH/REPLACE blocks must NOT overlap - each must target different, non-overlapping code sections.
+- Make sure that the changes you propose are consistent with each other. For example, if you refer to a new config variable
+    somewhere, you should also propose a change to add that variable.

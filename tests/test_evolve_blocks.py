@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from alphaevolve.patcher import PatchApplier, _EVOLVE_RE
-from alphaevolve.prompts import PromptSampler
+from alphaevolve.prompts.prompt_sampler import PromptSampler
 
 def test_evolve_block_detection():
     """Test that evolve blocks are correctly detected."""

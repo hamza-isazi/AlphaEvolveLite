@@ -12,7 +12,7 @@ from .program_generator import generate_program
 from .db import EvolutionaryDatabase, ProgramRecord
 from .llm import LLMEngine
 from .problem import Problem
-from .prompts import PromptSampler
+from .prompts.prompt_sampler import PromptSampler
 from .patcher import PatchApplier
 
 class ControllerContext:

@@ -7,7 +7,7 @@ from typing import List, Tuple, Optional
 from dataclasses import dataclass
 
 from .patcher import PatchApplier, PatchError
-from .prompts import PromptSampler
+from .prompts.prompt_sampler import PromptSampler
 from .problem import Problem
 from .llm import LLMEngine, LLMAPIError
 from .config import Config
