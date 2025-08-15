@@ -232,7 +232,7 @@ def generate_program(
         # Select retry model for feedback generation
         context.llm_instance.select_retry_model()
         try:
-            feedback_prompt = context.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs, cfg.problem_eval)
+            feedback_prompt = context.prompt_sampler.build_feedback_prompt(record.code, record.score, record.evaluation_logs)
             record.feedback = context.llm_instance.generate(feedback_prompt)
         except Exception as e:
             context.logger.error("Individual %d: failed to generate feedback: %s", 

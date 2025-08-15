@@ -71,21 +71,11 @@ class PromptSampler:
             current_code=current_code
         )
     
-    def build_feedback_prompt(self, code: str, score: float, logs: str, evaluation_script_path: str = None) -> str:
-        """Build a feedback prompt using Jinja templates."""
-        # Read evaluation script if provided
-        evaluation_script = "No evaluation script available."
-        if evaluation_script_path:
-            try:
-                with open(evaluation_script_path, 'r', encoding='utf-8') as f:
-                    evaluation_script = f.read()
-            except Exception as e:
-                evaluation_script = f"Error reading evaluation script: {str(e)}"
-        
+    def build_feedback_prompt(self, code: str, score: float, logs: str | None) -> str:
+        """Build a feedback prompt using Jinja templates."""        
         template = self._get_template('feedback.jinja')
         return template.render(
             code=code,
             score=score,
-            evaluation_script=evaluation_script,
-            logs=logs if logs else "No evaluation logs available."
+            logs=logs
         )

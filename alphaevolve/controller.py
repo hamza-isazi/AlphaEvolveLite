@@ -53,7 +53,7 @@ class EvolutionController:
             )
             # Generate feedback for the seed program if enabled
             if cfg.evolution.enable_feedback:
-                feedback_prompt = self.context.prompt_sampler.build_feedback_prompt(seed_record.code, seed_record.score, seed_record.evaluation_logs, cfg.problem_eval)
+                feedback_prompt = self.context.prompt_sampler.build_feedback_prompt(seed_record.code, seed_record.score, seed_record.evaluation_logs)
                 llm_instance = LLMEngine(cfg.llm, self.logger)
                 seed_record.used_model = llm_instance.get_used_model()
                 seed_record.feedback = llm_instance.generate(feedback_prompt)
