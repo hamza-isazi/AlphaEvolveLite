@@ -2,8 +2,7 @@
 Jinja-based prompt sampler for AlphaEvolveLite.
 """
 
-from __future__ import annotations
-from typing import Sequence, Dict, List, Optional
+from typing import Sequence, Dict, List
 from pathlib import Path
 from jinja2 import Environment, FileSystemLoader
 from ..patcher import _EVOLVE_RE
