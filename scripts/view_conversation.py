@@ -160,10 +160,7 @@ def main():
         print(f"Total Tokens: {program['total_tokens']}")
         print()
         
-        display_conversation(program['conversation'], args.pretty)
-
-        print(f"Final Code: {program['code']}")
-    
+        display_conversation(program['conversation'], args.pretty)    
     else:
         parser.print_help()
 

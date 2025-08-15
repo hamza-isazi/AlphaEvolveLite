@@ -27,6 +27,17 @@ class ClientPool:
                 raise RuntimeError("Set OPENROUTER_API_KEY in your environment.")
             return OpenAI(api_key=api_key,
                           base_url="https://openrouter.ai/api/v1")
+        if p == "custom":
+            api_key = os.getenv("CUSTOM_API_KEY")
+            base_url = os.getenv("CUSTOM_BASE_URL")
+            if not api_key:
+                raise RuntimeError("Set CUSTOM_API_KEY in your environment.")
+            if not base_url:
+                raise RuntimeError("Set CUSTOM_BASE_URL in your environment.")
+            return OpenAI(
+                api_key=api_key,
+                base_url=base_url
+            )
         raise ValueError(f"Unsupported LLM provider: {provider}")
 
     def get(self, provider: str) -> OpenAI:
