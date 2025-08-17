@@ -5,6 +5,11 @@ _DIFF_RE = re.compile(
     r"<<{4,}\s*SEARCH\s*\n(.*?)\n={4,}\s*\n(.*?)\n>{4,}\s*REPLACE",
     re.DOTALL,
 )
+# Regex to match lone SEARCH lines that models sometimes include when doing full file replacement
+_LONE_SEARCH_RE = re.compile(
+    r"^<<{4,}\s*SEARCH\s*$",
+    re.MULTILINE,
+)
 _EVOLVE_RE = re.compile(
     r"#\s*EVOLVE-BLOCK-START(.*?)#\s*EVOLVE-BLOCK-END",
     re.DOTALL,
@@ -28,6 +33,7 @@ class PatchApplier:
         - Opening ``` with optional language identifier
         - Closing ``` that may be followed by additional text
         - Multiple code blocks (takes the first complete one)
+        - Removes any lone SEARCH lines that models sometimes include when doing full file replacement
         
         Args:
             text: Text that may contain markdown code blocks
@@ -35,6 +41,11 @@ class PatchApplier:
         Returns:
             The extracted code without markdown formatting
         """
+        
+        # Strip out lone SEARCH lines that models sometimes include when doing full file replacement
+        # These are incomplete diff markers that don't have corresponding REPLACE sections
+        text = _LONE_SEARCH_RE.sub('', text)
+
         # Look for code block pattern: ```[language]?\n...\n```
         # The closing ``` should be followed by a newline or end of string
         match = _CODE_BLOCK_RE.search(text)

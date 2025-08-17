@@ -10,7 +10,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from alphaevolve.patcher import PatchApplier, _EVOLVE_RE
-from alphaevolve.prompts import PromptSampler
+from alphaevolve.prompts.prompt_sampler import PromptSampler
 
 def test_evolve_block_detection():
     """Test that evolve blocks are correctly detected."""
@@ -148,8 +148,8 @@ def test_function():
     sampler = PromptSampler(None)
     
     # Generate prompts
-    prompt_with = sampler.build(parent_with_blocks, [])
-    prompt_without = sampler.build(parent_without_blocks, [])
+    prompt_with = sampler.build_initial_prompt(parent_with_blocks, [])
+    prompt_without = sampler.build_initial_prompt(parent_without_blocks, [])
     
     # Check that the appropriate template was used
     has_evolve_instructions = "Only change lines *between* the markers" in prompt_with

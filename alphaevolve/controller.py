@@ -10,9 +10,9 @@ from .log import init_logger
 from .config import Config
 from .program_generator import generate_program
 from .db import EvolutionaryDatabase, ProgramRecord
-from .llm import LLMEngine, create_llm_client
+from .llm import LLMEngine
 from .problem import Problem
-from .prompts import PromptSampler
+from .prompts.prompt_sampler import PromptSampler
 from .patcher import PatchApplier
 
 class ControllerContext:
@@ -25,7 +25,6 @@ class ControllerContext:
         self.problem = Problem(self.cfg.problem_entry, self.cfg.problem_eval)
         self.prompt_sampler = PromptSampler(self.database, enable_feedback=self.cfg.evolution.enable_feedback)
         self.patcher = PatchApplier()
-        self.client = create_llm_client(self.cfg.llm)
 
 class EvolutionController:
     """
@@ -54,8 +53,8 @@ class EvolutionController:
             )
             # Generate feedback for the seed program if enabled
             if cfg.evolution.enable_feedback:
-                feedback_prompt = self.context.prompt_sampler.build_feedback_prompt(seed_record.code, seed_record.score, seed_record.evaluation_logs, cfg.problem_eval)
-                llm_instance = LLMEngine(cfg.llm, self.context.client, self.logger)
+                feedback_prompt = self.context.prompt_sampler.build_feedback_prompt(seed_record.code, seed_record.score, seed_record.evaluation_logs)
+                llm_instance = LLMEngine(cfg.llm, self.logger)
                 seed_record.used_model = llm_instance.get_used_model()
                 seed_record.feedback = llm_instance.generate(feedback_prompt)
                 seed_record.total_llm_time, seed_record.total_tokens = llm_instance.get_metrics()
@@ -142,7 +141,7 @@ class EvolutionController:
         with progress tracking and logging throughout the process.
         """
         # Initialize evolution parameters
-        max_concurrent = 8  # Number of concurrent program generations
+        max_workers = self.cfg.evolution.max_workers  # Number of concurrent program generations
         max_total = self.cfg.evolution.max_generations * self.cfg.evolution.population_size  # Total programs to generate
         completed = 0  # Counter for completed program generations
         
@@ -157,7 +156,7 @@ class EvolutionController:
         else:
             completed = 0  # Counter for completed program generations
             
-        self.logger.info("Starting continuous evolution with up to %d concurrent individuals", max_concurrent)
+        self.logger.info("Starting continuous evolution with up to %d concurrent individuals", max_workers)
         generation_program_records = []  # Store results for current generation
         task_id_counter = completed  # Unique identifier for each generation task
         gen_pbar = tqdm(total=self.cfg.evolution.population_size, desc=f"Generation {self.current_gen}") # Progress bar for current generation
@@ -181,12 +180,13 @@ class EvolutionController:
                 result = generate_program(
                     task_id,
                     (parent_row, inspiration_rows),
-                    self.current_gen,
                     self.cfg,
-                    self.logger,
-                    self.context.client
+                    self.logger
                 )
                 
+                # Set the generation number for the result here because we might have moved on to the next generation
+                # since the program generation might have taken a while
+                result.gen = self.current_gen
                 # Store the generated program in the database
                 program_id = self.context.database.add(result)
                 
@@ -203,13 +203,13 @@ class EvolutionController:
                 return None
 
         # Set up thread pool for concurrent program generation
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_concurrent) as executor:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Submit initial batch of program generation tasks
             futures = {
                 executor.submit(generate_and_save_program, task_id_counter + i)
-                for i in range(max_concurrent)
+                for i in range(max_workers)
             }
-            task_id_counter += max_concurrent
+            task_id_counter += max_workers
 
             # Main evolution loop: generate programs continuously until max_total is reached
             while completed < max_total:
@@ -223,6 +223,10 @@ class EvolutionController:
                     # Store program if successful
                     if result:
                         generation_program_records.append(result)
+                        # Check if this program produced a new best score
+                        if result.score is not None and result.score > best_score:
+                            self.logger.info("Best score improved by %.3f! New best score: %.3f (prev: %.3f)", result.score - best_score, result.score, best_score)
+                            best_score = result.score
                     # Update progress
                     completed += 1
                     gen_pbar.update(1)
@@ -239,13 +243,6 @@ class EvolutionController:
                         
                         # Move to next generation
                         self.current_gen += 1
-                        
-                        # Check if this generation produced a new best score
-                        scores = [r.score for r in generation_program_records if r.score is not None]
-                        gen_best_score = max(scores) if scores else None
-                        if gen_best_score is not None and gen_best_score > best_score:
-                            self.logger.info("Best score improved by %.3f! New best score: %.3f (prev: %.3f)", gen_best_score - best_score, gen_best_score, best_score)
-                            best_score = gen_best_score
                         
                         # Reset for next generation
                         generation_program_records.clear()

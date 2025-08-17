@@ -1,0 +1,18 @@
+{% if code_unchanged %}
+Your code changes were not applied successfully due to the following error:
+
+{{ failure_type }}: {{ error_message }}
+
+Please rewrite the code changes in the same SEARCH/REPLACE or Full File Replacement format.
+{% else %}
+The new code you proposed:
+
+{{ current_code }}
+
+Failed with the following error:
+
+{{ failure_type }}: {{ error_message }}
+
+Please correct the issue with new code changes using either the SEARCH/REPLACE or Full File Replacement format.
+Your code changes will be applied to the new code shown above.
+{% endif %}

@@ -10,9 +10,9 @@ class ProgramRecord:
     """Represents a program record in the database."""
     code: str
     explanation: str
-    score: Optional[float]
-    gen: int
-    parent_id: Optional[int]
+    score: Optional[float] = None
+    gen: Optional[int] = None
+    parent_id: Optional[int] = None
     failure_type: Optional[str] = None
     error_message: Optional[str] = None
     id: Optional[int] = None

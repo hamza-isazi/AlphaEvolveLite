@@ -1,0 +1,17 @@
+You are an expert evaluator. Analyze the following program's performance and explain why it achieved the score it did and where it could be improved.
+
+**Program Code:**
+```python
+{{ code }}
+```
+
+**Program Score:** {{ "%.3f"|format(score) }}
+
+{% if logs %}
+**Evaluation Logs:**
+{{ logs }}
+{% endif %}
+
+**Task:** Provide 2-3 concise insights explaining why this program achieved its specific score and where it could be improved.
+
+Keep your analysis brief and specific. Each insight should be 1-2 sentences maximum.

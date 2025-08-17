@@ -2,6 +2,7 @@
 openai>=1.14.0          # LLM API client
 PyYAML>=6.0             # Config file parsing
 tqdm>=4.65.0            # Progress bars
+jinja2>=3.1.0           # Template engine
 
 # --- Visualization dependencies ---
 matplotlib>=3.7.0       # Plotting library

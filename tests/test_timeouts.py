@@ -4,8 +4,8 @@ import tempfile
 import os
 import logging
 from unittest.mock import patch
-from alphaevolve.llm import LLMEngine, create_llm_client
-from alphaevolve.config import LLMCfg, ModelCfg
+from alphaevolve.llm import LLMEngine
+from alphaevolve.llm import LLMCfg, ModelCfg
 from alphaevolve.problem import Problem
 
 
@@ -26,14 +26,12 @@ def test_llm_generate_timeout():
     )
     
     # Create a real LLM client
-    client = create_llm_client(llm_cfg)
-    
     # Create logger
     logger = logging.getLogger("test_llm_timeout")
     logger.setLevel(logging.INFO)
     
     # Create LLM engine
-    llm_engine = LLMEngine(llm_cfg, client, logger)
+    llm_engine = LLMEngine(llm_cfg, logger)
     
     # Measure the time it takes to generate a response
     start_time = time.time()

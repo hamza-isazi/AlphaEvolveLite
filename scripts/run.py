@@ -17,6 +17,8 @@ def main():
                        help='Enable debug logging (verbose individual-level output)')
     parser.add_argument('--resume', action='store_true',
                        help='Resume evolution from the current generation in the database')
+    parser.add_argument('--workers', type=int, default=None,
+                       help='Number of workers for the controller threadpool (overrides config file)')
     
     args = parser.parse_args()
     
@@ -25,6 +27,10 @@ def main():
     
     # Override debug setting from command line
     cfg.debug = args.debug
+    
+    # Override max_workers setting from command line if specified
+    if args.workers is not None:
+        cfg.evolution.max_workers = args.workers
     
     # Run evolution
     EvolutionController(cfg, resume=args.resume).run_evolution()

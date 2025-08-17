@@ -6,6 +6,9 @@ Usage:
     python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label"
     python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --output plot.png
     python scripts/visualize_experiment.py --db alphaevolve.db --list-experiments
+    python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --first-generation 5 --last-generation 15
+    python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --benchmark-scores '{"baseline": 0.5, "target": 0.8}'
+    python scripts/visualize_experiment.py --db alphaevolve.db --experiment "experiment_label" --benchmark-scores benchmarks.json
 """
 
 import argparse
@@ -15,12 +18,17 @@ import numpy as np
 from pathlib import Path
 import sys
 import os
+import json
 from scipy import stats
 
 # Add the parent directory to the path so we can import alphaevolve
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from alphaevolve.config import Config
+
+# Global variables for generation filtering
+FIRST_GEN = 0
+LAST_GEN = None
 
 
 def get_experiments(db_path: str) -> list:
@@ -47,39 +55,49 @@ def get_experiment_data(db_path: str, experiment_id: int) -> list:
     conn.row_factory = sqlite3.Row
     
     cursor = conn.cursor()
-    cursor.execute("""
-        SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens
-        FROM programs
-        WHERE experiment_id = ?
-        ORDER BY gen, score DESC
-    """, (experiment_id,))
+    
+    # Filter by generation range
+    if LAST_GEN is None:
+        cursor.execute("""
+            SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens
+            FROM programs
+            WHERE experiment_id = ? AND gen >= ?
+            ORDER BY gen, score DESC
+        """, (experiment_id, FIRST_GEN))
+    else:
+        cursor.execute("""
+            SELECT id, code, score, gen, parent_id, experiment_id, failure_type, retry_count, total_evaluation_time, generation_time, total_llm_time, total_tokens
+            FROM programs
+            WHERE experiment_id = ? AND gen >= ? AND gen <= ?
+            ORDER BY gen, score DESC
+        """, (experiment_id, FIRST_GEN, LAST_GEN))
     
     programs = [dict(row) for row in cursor.fetchall()]
     conn.close()
     return programs
 
 
-def get_llm_stats(db_path: str, experiment_id: int, max_generations: int = None) -> tuple:
+def get_llm_stats(db_path: str, experiment_id: int) -> tuple:
     """Get score distributions per LLM and success rate per LLM for a specific experiment.
-    If max_generations is specified, only include programs up to that generation."""
+    If first_gen and last_gen are specified, only include programs in that generation range."""
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     
     cursor = conn.cursor()
     
     # Get all programs for the specific experiment with their used model and parent info
-    if max_generations is None:
+    if LAST_GEN is None:
         cursor.execute("""
             SELECT p.id, p.score, p.failure_type, p.used_model, p.parent_id, p.gen
             FROM programs p
-            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL
-        """, (experiment_id,))
+            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL AND p.gen >= ?
+        """, (experiment_id, FIRST_GEN))
     else:
         cursor.execute("""
             SELECT p.id, p.score, p.failure_type, p.used_model, p.parent_id, p.gen
             FROM programs p
-            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL AND p.gen <= ?
-        """, (experiment_id, max_generations))
+            WHERE p.experiment_id = ? AND p.used_model IS NOT NULL AND p.gen >= ? AND p.gen <= ?
+        """, (experiment_id, FIRST_GEN, LAST_GEN))
     
     programs = [dict(row) for row in cursor.fetchall()]
     
@@ -144,6 +162,75 @@ def get_llm_stats(db_path: str, experiment_id: int, max_generations: int = None)
     return models, score_distributions, differential_distributions, success_rates
 
 
+def get_best_score_progression(db_path: str, experiment_id: int) -> list:
+    """Get the best score progression over time, showing which model produced each improvement."""
+    conn = sqlite3.connect(db_path)
+    conn.row_factory = sqlite3.Row
+    
+    cursor = conn.cursor()
+    
+    # Get all programs ordered by id (chronological order) with valid scores
+    if LAST_GEN is None:
+        cursor.execute("""
+            SELECT id, gen, used_model, score
+            FROM programs
+            WHERE experiment_id = ? AND score IS NOT NULL AND gen >= ?
+            ORDER BY id
+        """, (experiment_id, FIRST_GEN))
+    else:
+        cursor.execute("""
+            SELECT id, gen, used_model, score
+            FROM programs
+            WHERE experiment_id = ? AND score IS NOT NULL AND gen >= ? AND gen <= ?
+            ORDER BY id
+        """, (experiment_id, FIRST_GEN, LAST_GEN))
+    
+    programs = [dict(row) for row in cursor.fetchall()]
+    conn.close()
+    
+    # Find programs that represent improvements (better than any previous program)
+    best_score_progression = []
+    best_score_so_far = float('-inf')
+    
+    for program in programs:
+        if program['score'] > best_score_so_far:
+            best_score_so_far = program['score']
+            best_score_progression.append(program)
+    
+    return best_score_progression
+
+
+def plot_best_score_progression(ax, progression_data, title):
+    """Plot the best score progression over time with model labels."""
+    if not progression_data:
+        ax.text(0.5, 0.5, 'No progression data\navailable', ha='center', va='center', transform=ax.transAxes)
+        ax.set_title(title)
+        return
+    
+    # Extract data
+    gens = [p['gen'] for p in progression_data]
+    scores = [p['score'] for p in progression_data]
+    models = [p['used_model'] for p in progression_data]
+    
+    # Plot the line
+    ax.plot(gens, scores, '-o', linewidth=2, markersize=6, color='blue', alpha=0.7)
+    
+    # Add model labels for each point
+    for i, (gen, score, model) in enumerate(zip(gens, scores, models)):
+        if model:
+            # Strip model name to exclude characters before slash
+            display_model = model.split('/')[-1] if '/' in model else model
+            
+            # Position label above the point with 45 degree rotation
+            ax.annotate(display_model, (gen, score), 
+                       xytext=(0, 10), textcoords='offset points',
+                       fontsize=8, rotation=90,
+                       bbox=dict(boxstyle='round,pad=0.2', facecolor='white', alpha=0.8))
+    
+    setup_plot_common(ax, 'Generation', 'Score', title)
+    ax.grid(True, alpha=0.3)
+
+
 def group_data_by_generation(programs: list, key: str, filter_successful: bool = True):
     """Helper function to group data by generation and calculate statistics."""
     data_to_use = [p for p in programs if p['failure_type'] is None] if filter_successful else programs
@@ -187,7 +274,7 @@ def setup_plot_common(ax, xlabel, ylabel, title, show_grid=True):
 
 
 def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blue', 
-                         show_best=False, best_values=None, scale_factor=1.0):
+                         show_best=False, best_values=None, scale_factor=1.0, benchmark_scores=None):
     """Helper function to create a plot with percentile shading and summary lines."""
     # Apply scale factor if needed
     means = [m * scale_factor for m in means]
@@ -208,6 +295,17 @@ def plot_with_percentiles(ax, gens, means, p10s, p90s, title, ylabel, color='blu
     if show_best and best_values:
         best_values = [b * scale_factor for b in best_values]
         ax.plot(gens, best_values, '-', linewidth=2, color='orange', label='Best')
+    
+    # Plot benchmark scores as horizontal dashed lines if provided
+    if benchmark_scores and isinstance(benchmark_scores, dict):
+        colors = ['green', 'purple', 'brown', 'pink', 'gray', 'olive', 'cyan', 'magenta']
+        for i, (benchmark_name, benchmark_score) in enumerate(benchmark_scores.items()):
+            if isinstance(benchmark_score, (int, float)):
+                # Apply scale factor to benchmark score
+                scaled_score = benchmark_score * scale_factor
+                color = colors[i % len(colors)]
+                ax.axhline(y=scaled_score, color=color, linestyle='--', linewidth=2, 
+                          alpha=0.8, label=f'Benchmark: {benchmark_name}')
     
     setup_plot_common(ax, 'Generation', ylabel, title)
     ax.legend()
@@ -363,8 +461,8 @@ def create_success_rate_plot(ax, models, success_rates, title, fontsize=8):
                 f'{value:.1f}%', ha='center', va='bottom', fontsize=fontsize)
 
 
-def plot_llm_comparison(ax1, ax2, ax3, models, score_distributions, differential_distributions, success_rates):
-    """Create violin plots and bar plot for LLM comparison."""
+def plot_llm_comparison(ax1, ax2, ax3, ax4, models, score_distributions, differential_distributions, success_rates, best_score_progression=None):
+    """Create 2x2 grid of violin plots and bar plot for LLM comparison."""
     # Plot 1: Score distribution per LLM
     create_violin_plot(ax1, score_distributions, models, 'Score Distribution per LLM', 'Score', 'skyblue', 8)
     
@@ -373,20 +471,23 @@ def plot_llm_comparison(ax1, ax2, ax3, models, score_distributions, differential
     
     # Plot 3: Success rate per LLM
     create_success_rate_plot(ax3, models, success_rates, 'Success Rate per LLM', 8)
+    
+    # Plot 4: Best score progression
+    if best_score_progression:
+        plot_best_score_progression(ax4, best_score_progression, 'Best Score Progression')
+    else:
+        ax4.text(0.5, 0.5, 'Best Score Progression\n(no data available)', ha='center', va='center', transform=ax4.transAxes)
+        ax4.set_title('Best Score Progression')
+        ax4.axis('off')
 
 
 def create_visualization(programs: list, experiment_label: str, output_path: str | None = None, 
-                        show_individual: bool = True, show_combined: bool = True, db_path: str = None, experiment_id: int = None, max_generations: int = None):
+                        show_individual: bool = True, show_combined: bool = True, db_path: str = None, experiment_id: int = None,
+                        benchmark_scores: dict = None):
     """Create and save the visualization."""
     if not programs:
         print("No programs found for this experiment.")
         return
-    
-    # Filter by max generations if specified
-    if max_generations is not None:
-        original_count = len(programs)
-        programs = [p for p in programs if p['gen'] <= max_generations]
-        print(f"Filtered to generations 1-{max_generations}: {len(programs)} programs (from {original_count} total)")
     
     # Filter out failed programs (those with failure_type not None)
     successful_programs = [p for p in programs if p['failure_type'] is None]
@@ -427,7 +528,7 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
         best_scores = [max(gen_to_scores[gen]) for gen in score_gens]
         plot_with_percentiles(ax1, score_gens, score_means, score_p10s, score_p90s, 
                             'Score Evolution with Percentiles', 'Score', 
-                            show_best=True, best_values=best_scores)
+                            show_best=True, best_values=best_scores, benchmark_scores=benchmark_scores)
     
     # 2. Success and Failure Rates per Generation
     plot_success_failure_rates(ax2, programs, failure_types)
@@ -493,13 +594,16 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     else:
         plt.show()
     
-    models, score_distributions, differential_distributions, success_rates = get_llm_stats(db_path, experiment_id, max_generations)
+    models, score_distributions, differential_distributions, success_rates = get_llm_stats(db_path, experiment_id)
     
-    # Create a new figure for LLM comparison
-    fig_llm, (ax_llm1, ax_llm2, ax_llm3) = plt.subplots(1, 3, figsize=(20, 6))
+    # Get best score progression data
+    best_score_progression = get_best_score_progression(db_path, experiment_id)
+    
+    # Create a new figure for LLM comparison (2x2 layout)
+    fig_llm, ((ax_llm1, ax_llm2), (ax_llm3, ax_llm4)) = plt.subplots(2, 2, figsize=(16, 12))
     
     # Plot LLM comparison
-    plot_llm_comparison(ax_llm1, ax_llm2, ax_llm3, models, score_distributions, differential_distributions, success_rates)
+    plot_llm_comparison(ax_llm1, ax_llm2, ax_llm3, ax_llm4, models, score_distributions, differential_distributions, success_rates, best_score_progression)
     
     # Add overall title
     fig_llm.suptitle(f'LLM Performance Comparison - {experiment_label}', fontsize=16, y=0.98)
@@ -519,17 +623,14 @@ def create_visualization(programs: list, experiment_label: str, output_path: str
     
     # Create individual plots if requested
     if show_individual:
-        create_individual_plots(programs, experiment_label, output_path)
+        create_individual_plots(programs, experiment_label, output_path, benchmark_scores)
     
     # Create individual LLM comparison plots if requested
-    if show_individual and db_path and experiment_id:
-        try:
-            create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, experiment_label, output_path)
-        except Exception as e:
-            print(f"Error creating individual LLM plots: {str(e)}")
+    if show_individual:
+        create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, best_score_progression, experiment_label, output_path, db_path, experiment_id)
 
 
-def create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, experiment_label: str, output_path: str | None = None):
+def create_individual_llm_plots(models, score_distributions, differential_distributions, success_rates, best_score_progression, experiment_label: str, output_path: str | None = None, db_path: str = None, experiment_id: int = None):
     """Create individual plots for LLM comparison metrics."""
     if not models:
         return
@@ -580,9 +681,24 @@ def create_individual_llm_plots(models, score_distributions, differential_distri
         plt.show()
     
     plt.close()
+    
+    # Create individual best score progression plot    
+    fig, ax = plt.subplots(figsize=(12, 6))
+    plot_best_score_progression(ax, best_score_progression, f'Best Score Progression - {experiment_label}')
+    plt.tight_layout()
+    
+    if output_path:
+        base_path = Path(output_path)
+        individual_path = base_path.parent / f"{base_path.stem}_llm_best_score_progression{base_path.suffix}"
+        plt.savefig(individual_path, dpi=300, bbox_inches='tight')
+        print(f"Individual best score progression plot saved to: {individual_path}")
+    else:
+        plt.show()
+    
+    plt.close()
 
 
-def create_individual_plots(programs: list, experiment_label: str, output_path: str | None = None):
+def create_individual_plots(programs: list, experiment_label: str, output_path: str | None = None, benchmark_scores: dict = None):
     """Create individual plots for each metric."""
     if not programs:
         return
@@ -614,19 +730,19 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
     # Create individual plots for all metrics
     plots_data = [
         (score_gens, score_means, score_p10s, score_p90s, 'Score Evolution', 'Score', True, 
-         [max(gen_to_scores[gen]) for gen in score_gens] if score_gens else None, 1.0, 'score_evolution'),
-        (retry_gens, retry_means, retry_p10s, retry_p90s, 'Retry Count', 'Retry Count', False, None, 1.0, 'retry_count'),
-        (token_gens, token_means, token_p10s, token_p90s, 'Total Tokens', 'Total Tokens (thousands)', False, None, 1/1000, 'total_tokens'),
+         [max(gen_to_scores[gen]) for gen in score_gens] if score_gens else None, 1.0, 'score_evolution', benchmark_scores),
+        (retry_gens, retry_means, retry_p10s, retry_p90s, 'Retry Count', 'Retry Count', False, None, 1.0, 'retry_count', None),
+        (token_gens, token_means, token_p10s, token_p90s, 'Total Tokens', 'Total Tokens (thousands)', False, None, 1/1000, 'total_tokens', None),
     ]
     
     # Create individual plots for percentile-based metrics
-    for i, (gens, means, p10s, p90s, title, ylabel, show_best, best_values, scale_factor, plot_id) in enumerate(plots_data):
+    for i, (gens, means, p10s, p90s, title, ylabel, show_best, best_values, scale_factor, plot_id, benchmark_scores_for_plot) in enumerate(plots_data):
         if not gens:
             continue
             
         fig, ax = plt.subplots(figsize=(10, 6))
         plot_with_percentiles(ax, gens, means, p10s, p90s, f"{title} - {experiment_label}", ylabel, 
-                            show_best=show_best, best_values=best_values, scale_factor=scale_factor)
+                            show_best=show_best, best_values=best_values, scale_factor=scale_factor, benchmark_scores=benchmark_scores_for_plot)
         
         plt.tight_layout()
         
@@ -697,16 +813,24 @@ def create_individual_plots(programs: list, experiment_label: str, output_path: 
 
 
 def main():
+    global FIRST_GEN, LAST_GEN
+    
     parser = argparse.ArgumentParser(description='Visualize experiment results')
     parser.add_argument('--db', type=str, default='alphaevolve.db', help='Database file path (default: alphaevolve.db)')
     parser.add_argument('--experiment', '-e', type=str, help='Experiment label to visualize')
-    parser.add_argument('--list-experiments', '-l', action='store_true', help='List all available experiments')
+    parser.add_argument('--list-experiments', action='store_true', help='List all available experiments')
     parser.add_argument('--output', '-o', type=str, help='Output file path for the plot (e.g., plot.png)')
-    parser.add_argument('--max-generations', '-m', type=int, help='Maximum generation to include in plots (e.g., 10 for generations 1-10)')
+    parser.add_argument('--first-generation', '-f', type=int, default=0, help='First generation to include in plots (default: 0)')
+    parser.add_argument('--last-generation', '-l', type=int, help='Last generation to include in plots (e.g., 10 for generations 1-10)')
     parser.add_argument('--individual-only', action='store_true', help='Show only individual plots, not combined')
     parser.add_argument('--combined-only', action='store_true', help='Show only combined plot, not individual')
+    parser.add_argument('--benchmark-scores', type=str, help='JSON string of benchmark scores as {"name": score, ...} or path to JSON file')
     
     args = parser.parse_args()
+    
+    # Set global variables
+    FIRST_GEN = args.first_generation
+    LAST_GEN = args.last_generation
     
     # Check if database file exists
     if not os.path.exists(args.db):
@@ -777,15 +901,39 @@ def main():
         for failure_type, count in sorted(failure_counts.items()):
             print(f"  - {failure_type}: {count}")
     
+    # Parse benchmark scores if provided
+    benchmark_scores = None
+    if args.benchmark_scores:
+        try:
+            # Check if it's a file path
+            if os.path.exists(args.benchmark_scores):
+                with open(args.benchmark_scores, 'r') as f:
+                    benchmark_scores = json.load(f)
+            else:
+                # Try to parse as JSON string
+                benchmark_scores = json.loads(args.benchmark_scores)
+            
+            if not isinstance(benchmark_scores, dict):
+                print("Error: Benchmark scores must be a dictionary")
+                return
+                
+            print(f"Loaded benchmark scores: {benchmark_scores}")
+        except (json.JSONDecodeError, FileNotFoundError) as e:
+            print(f"Error parsing benchmark scores: {e}")
+            print("Please provide a valid JSON string or file path")
+            return
+    
     # Determine what to show
     show_individual = not args.combined_only
     show_combined = not args.individual_only
     
     # Create visualization
-    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined, args.db, experiment['id'], args.max_generations)
+    create_visualization(programs, experiment['label'], args.output, show_individual, show_combined, args.db, experiment['id'], benchmark_scores)
 
 
 # Example usage:
 # python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning
+# python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning -f 5 -l 15
+# python scripts/visualize_experiment.py --db alphaevolve.db -e book-scanning --benchmark-scores '{"baseline": 0.5, "target": 0.8}'
 if __name__ == "__main__":
     main() 
