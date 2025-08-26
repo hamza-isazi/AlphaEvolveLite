@@ -94,7 +94,9 @@ class LLMEngine:
         response = client.chat.completions.create(
             model=self.selected_model.name,
             messages=self.messages,
-            temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN
+            temperature=self.selected_model.temperature,
+            reasoning_effort=self.selected_model.reasoning_effort,
+            timeout=self.llm_cfg.llm_timeout
         )
         
         content = response.choices[0].message.content
