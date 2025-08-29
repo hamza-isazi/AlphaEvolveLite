@@ -152,9 +152,6 @@ evolution:
   recent_generations: 2
   recent_percentile: 15.0
   tabu_search_probability: 0.2
-  enable_early_stopping: true
-  plateau_generations: 5
-  plateau_threshold: 0.01
 problem:
   entry_script: examples/code_golf/task013_v14/initial_program.py
   evaluator: examples/code_golf/task013_v14/evaluate.py

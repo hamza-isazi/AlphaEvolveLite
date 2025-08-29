@@ -19,11 +19,11 @@ def parse_code_response(response: str) -> Tuple[Optional[str], str]:
         response: The full LLM response text
         
     Returns:
-        Tuple of (explanation, code) where explanation can be None if not found and code is the entire response if no code section is found
+        Tuple of (explanation, code) where explanation is empty string if not found and code is the entire response if no code section is found
     """
     # Extract explanation section
     explanation_match = _EXPLANATION_RE.search(response)
-    explanation = None
+    explanation = ""  # Default to empty string instead of None
     if explanation_match:
         explanation = explanation_match.group(1).strip()
     

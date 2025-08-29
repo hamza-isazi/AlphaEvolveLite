@@ -8,7 +8,6 @@ from openai.types.chat import ChatCompletionMessageParam
 
 from .config import LLMCfg, ModelCfg
 from .clients import global_client_pool
-from ..utils import timeout
 
 
 class LLMAPIError(Exception):
@@ -85,16 +84,17 @@ class LLMEngine:
         self._total_tokens = 0
 
     def _generate_internal(self) -> str:
-        """Internal method that performs the actual LLM generation. DO NOT MAKE ANY STATE CHANGES HERE,
-        they will not persist since this function is called in a subprocess by the timeout decorator."""                
+        """Internal method that performs the actual LLM generation."""                
         # Get the appropriate client for the selected model
         client = self._client_pool.get(self.selected_model.provider)
         
-        # Make the API call
+        # Make the API call with built-in timeout
         response = client.chat.completions.create(
             model=self.selected_model.name,
             messages=self.messages,
-            temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN
+            temperature=self.selected_model.temperature if self.selected_model.temperature else NOT_GIVEN,
+            reasoning_effort=self.selected_model.reasoning_effort,
+            timeout=self.llm_cfg.llm_timeout
         )
         
         content = response.choices[0].message.content
@@ -124,14 +124,8 @@ class LLMEngine:
         # Try up to max_retries times
         for attempt in range(max_retries):
             try:
-                # Use the timeout decorator to wrap the generation
-                # (OpenAI's built-in timeout param does not work correctly)
-                generate_with_timeout = timeout(
-                    self.llm_cfg.llm_timeout, 
-                    f"LLM generation timed out after {self.llm_cfg.llm_timeout} seconds"
-                )(self._generate_internal)
-                
-                content, total_tokens = generate_with_timeout()
+                # Use OpenAI's built-in timeout instead of multiprocessing timeout
+                content, total_tokens = self._generate_internal()
                 
                 # Check if we got a valid response (not empty or None)
                 if not content or not content.strip():
